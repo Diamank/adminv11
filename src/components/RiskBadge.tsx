@@ -1,26 +1,22 @@
-import React from 'react'
+// src/components/RiskDot.tsx
+type Risco = "sem_risco" | "risco" | null | boolean
 
-export type RiskLevel = 'alto' | 'moderado' | 'baixo' | 'nao_avaliado'
+export default function RiskDot({ risco, withLabel = false }: { risco: Risco; withLabel?: boolean }) {
+  // Aceita string ("risco"/"sem_risco") ou boolean (true=risco, false=sem risco)
+  const normalized: "risco" | "sem_risco" =
+    (typeof risco === "boolean" ? (risco ? "risco" : "sem_risco") : (risco || "sem_risco")) as any
 
-const label: Record<RiskLevel, string> = {
-  alto: 'Risco',
-  moderado: 'Risco moderado',
-  baixo: 'Sem risco',
-  nao_avaliado: 'Não analisado',
-}
+  const map = {
+    risco: { color: "bg-red-500", label: "Risco" },
+    sem_risco: { color: "bg-green-500", label: "Sem risco" },
+  } as const
 
-const colors: Record<RiskLevel, string> = {
-  alto: 'bg-red-500',
-  moderado: 'bg-yellow-400',
-  baixo: 'bg-green-500',
-  nao_avaliado: 'bg-gray-300',
-}
+  const item = map[normalized]
 
-export default function RiskBadge({ level }: { level: RiskLevel }) {
   return (
-    <span className="inline-flex items-center gap-2 text-xs">
-      <span className={`h-2.5 w-2.5 rounded-full ${colors[level]}`} />
-      <span className="text-gray-700">{label[level]}</span>
+    <span className="inline-flex items-center gap-2" title={item.label}>
+      <span className={`h-2.5 w-2.5 rounded-full ${item.color}`} />
+      {withLabel && <span className="text-sm text-gray-600">{item.label}</span>}
     </span>
   )
 }
