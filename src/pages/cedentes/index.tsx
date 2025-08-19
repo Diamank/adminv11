@@ -3,26 +3,48 @@ import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
 import { cedentesMock } from '@/mocks/cedentes'
 import Link from 'next/link'
-import RiskBadge, { RiskLevel } from '@/components/RiskBadge'
+import RiskBadge from '@/components/RiskBadge'
 
-// ... normalize / onlyDigits / SearchIcon iguais ...
+// Tipagem de risco usada no sistema
+type RiskLevel = 'alto' | 'moderado' | 'baixo' | 'nao_avaliado'
 
+// Funções auxiliares
+function normalize(str: string = '') {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+function onlyDigits(str: string = '') {
+  return str.replace(/\D/g, '')
+}
+
+// Ícone da lupa
+function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+  )
+}
+
+// chave localStorage (retrocompatibilidade)
 const LS_KEY = 'cedentes_risco_v1'
 
-// lê risco salvo (retrocompat)
+// Hook de leitura de risco salvo
 function useRiskStore() {
   const [map, setMap] = useState<Record<string, RiskLevel>>({})
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY)
       if (raw) setMap(JSON.parse(raw))
     } catch {}
   }, [])
+
   const getRisk = (id: string): RiskLevel => map[id] ?? 'nao_avaliado'
   return { getRisk }
 }
 
-// mapeia formatos diferentes de risco para RiskLevel do badge
+// Normaliza os formatos vindos do cadastro
 function toRiskLevel(r: any): RiskLevel {
   if (r === 'alto' || r === 'moderado' || r === 'baixo' || r === 'nao_avaliado') return r
   if (typeof r === 'boolean') return r ? 'alto' : 'baixo' // true = risco, false = sem risco
@@ -35,7 +57,7 @@ export default function Cedentes() {
   const [query, setQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const { getRisk } = useRiskStore() // ⬅️ só leitura
+  const { getRisk } = useRiskStore()
 
   useEffect(() => {
     if (showSearch) inputRef.current?.focus()
@@ -45,6 +67,7 @@ export default function Cedentes() {
     const q = query.trim()
     if (!q) return cedentesMock
     const hasNumber = /\d/.test(q)
+
     return cedentesMock.filter((c) => {
       const name = (c as any).razao || (c as any).nome || ''
       const nameMatch = normalize(name).includes(normalize(q))
@@ -54,8 +77,8 @@ export default function Cedentes() {
   }, [query])
 
   const headers = ['Razão Social', 'CNPJ', 'Endereço', 'Conta bancária', 'Risco', 'Criado', 'Ações']
+
   const rows = data.map((c) => {
-    // prioridade: risco vindo do cadastro (c.risco) → fallback: storage antigo
     const level = toRiskLevel((c as any).risco ?? getRisk(c.id))
 
     return [
@@ -63,8 +86,8 @@ export default function Cedentes() {
       c.cnpj,
       c.endereco || '—',
       c.contaBancaria || '—',
-      // ⬇️ SOMENTE a bolinha (com title de acessibilidade)
-      <span key={`risk-${c.id}`} title={level === 'alto' ? 'Risco' : level === 'baixo' ? 'Sem risco' : 'Risco moderado'}>
+      // Apenas a bolinha de risco
+      <span key={`risk-${c.id}`} title={level}>
         <RiskBadge level={level} />
       </span>,
       c.criadoEm || '—',
@@ -77,19 +100,56 @@ export default function Cedentes() {
   return (
     <AdminLayout>
       <div className="max-w-6xl mx-auto">
-        {/* topo e busca — inalterados */}
         <div className="flex items-center justify-between mb-3 gap-3">
           <Link href="/cedentes/novo" className="px-3 py-2 rounded-lg border bg-white">
             + Novo cedente
           </Link>
-          {/* ... busca ... */}
+
+          <div className="flex items-center gap-2">
+            {!showSearch ? (
+              <button
+                type="button"
+                onClick={() => setShowSearch(true)}
+                className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                title="Buscar cedente"
+              >
+                <SearchIcon className="h-4 w-4 text-gray-600" />
+                Buscar
+              </button>
+            ) : (
+              <div className="relative w-[min(100%,26rem)]">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar por CNPJ ou Nome..."
+                  className="w-full rounded-xl border bg-white pl-9 pr-9 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label="Limpar"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="text-xs text-gray-500 mb-2">
           {data.length} {data.length === 1 ? 'cedente' : 'cedentes'} encontrados
         </div>
 
-        <Table headers={headers} rows={rows} emptyText={query ? 'Nenhum cedente encontrado para sua busca.' : 'Sem dados'} />
+        <Table
+          headers={headers}
+          rows={rows}
+          emptyText={query ? 'Nenhum cedente encontrado para sua busca.' : 'Sem dados'}
+        />
       </div>
     </AdminLayout>
   )
