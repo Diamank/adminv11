@@ -2,12 +2,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import React from 'react'
 
-function isMovimentacaoPath(pathname: string) {
-  return (
-    pathname.startsWith('/movimentacao') ||
-    pathname.startsWith('/contas-a-pagar') ||
-    pathname.startsWith('/contas-a-receber')
-  )
+function isMovimentacaoPath(p: string) {
+  return p.startsWith('/movimentacao') || p.startsWith('/contas-a-pagar') || p.startsWith('/contas-a-receber')
+}
+function isCadastroPath(p: string) {
+  return p.startsWith('/cadastro') || p.startsWith('/cedentes') || p.startsWith('/sacados')
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -21,46 +20,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav className="space-y-1 text-sm">
           <Link
             href="/"
-            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${
-              pathname === '/' ? 'bg-gray-100 font-medium' : ''
-            }`}
+            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${pathname === '/' ? 'bg-gray-100 font-medium' : ''}`}
           >
             Painel
           </Link>
 
           <Link
             href="/operacoes"
-            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${
-              pathname.startsWith('/operacoes') ? 'bg-gray-100 font-medium' : ''
-            }`}
+            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${pathname.startsWith('/operacoes') ? 'bg-gray-100 font-medium' : ''}`}
           >
             Operações
           </Link>
 
+          {/* ÚNICO item para o hub de Cadastro */}
           <Link
-            href="/cedentes"
-            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${
-              pathname.startsWith('/cedentes') ? 'bg-gray-100 font-medium' : ''
-            }`}
+            href="/cadastro"
+            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${isCadastroPath(pathname) ? 'bg-gray-100 font-medium' : ''}`}
           >
-            Cedentes
+            Cadastro
           </Link>
 
-          <Link
-            href="/sacados"
-            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${
-              pathname.startsWith('/sacados') ? 'bg-gray-100 font-medium' : ''
-            }`}
-          >
-            Sacados
-          </Link>
-
-          {/* ÚNICO item: Movimentação (sem submenu) */}
+          {/* ÚNICO item para o hub de Movimentação */}
           <Link
             href="/movimentacao"
-            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${
-              isMovimentacaoPath(pathname) ? 'bg-gray-100 font-medium' : ''
-            }`}
+            className={`block rounded-xl px-3 py-2 hover:bg-gray-100 ${isMovimentacaoPath(pathname) ? 'bg-gray-100 font-medium' : ''}`}
           >
             Movimentação
           </Link>
