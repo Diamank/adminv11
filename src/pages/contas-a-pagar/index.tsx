@@ -1,20 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
-import { contasPagarMock } from '@/mocks/contasPagar' // ajuste o caminho se o mock estiver em outro local
+import type { ContaPagarItem } from '@/mocks/contasPagar'
+import { contasPagarSeed } from '@/mocks/contasPagar'
 
-type Item = {
-  id: string
-  descricao: string
-  data?: string            // data de criação/emissão
-  valor: number
-  status: 'pendente' | 'pago' | 'atrasado'
-  cedenteId?: string
-  cedenteNome?: string
-  vencimento?: string      // <- preferido
-  nota?: { vencimento?: string } // <- fallback: vencimento da NF na operação
+type Item = ContaPagarItem
+
+const LS_KEY = 'contas_a_pagar_v1'
+
+// utilidades
+function getVencimento(i: Item) {
+  return i.vencimento ?? i.nota?.vencimento ?? i.data
 }
-
 function toDate(s?: string) {
   if (!s) return null
   const d = new Date(s)
@@ -26,7 +23,7 @@ function fmtDate(s?: string) {
   const yyyy = d.getFullYear()
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}` // ISO curto (casadinho com input[type=date])
+  return `${yyyy}-${mm}-${dd}`
 }
 function fmtMoney(v: number) {
   try {
@@ -35,57 +32,83 @@ function fmtMoney(v: number) {
     return `R$ ${Number(v || 0).toFixed(2)}`
   }
 }
-function getVencimento(i: Item) {
-  return i.vencimento ?? i.nota?.vencimento ?? i.data // último recurso
+
+// Hook simples que carrega/salva no localStorage
+function useContasStore() {
+  const [items, setItems] = useState<Item[]>([])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (raw) {
+        setItems(JSON.parse(raw))
+      } else {
+        // primeira vez: semear com o mock
+        setItems(contasPagarSeed)
+        localStorage.setItem(LS_KEY, JSON.stringify(contasPagarSeed))
+      }
+    } catch {
+      setItems(contasPagarSeed)
+    }
+  }, [])
+
+  const persist = (next: Item[]) => {
+    setItems(next)
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(next))
+    } catch {}
+  }
+
+  const updateStatus = (id: string, status: Item['status']) => {
+    const next = items.map((i) => (i.id === id ? { ...i, status } : i))
+    persist(next)
+  }
+
+  return { items, setItems: persist, updateStatus }
 }
 
 export default function ContasAPagar() {
+  const { items, updateStatus } = useContasStore()
+
   const [cedente, setCedente] = useState<string>('') // '' = todos
   const [from, setFrom] = useState<string>('')       // yyyy-mm-dd
   const [to, setTo] = useState<string>('')
 
-  // opções do select de cedentes
+  // opções do select de cedentes (dinâmico)
   const cedentesOpts = useMemo(() => {
-    const set = new Map<string, string>()
-    ;(contasPagarMock as Item[]).forEach((i) => {
+    const map = new Map<string, string>()
+    items.forEach((i) => {
       const id = i.cedenteId ?? i.cedenteNome ?? ''
       const nome = i.cedenteNome ?? i.cedenteId ?? ''
-      if (id) set.set(id, nome || String(id))
+      if (id) map.set(id, nome || String(id))
     })
-    return Array.from(set, ([value, label]) => ({ value, label }))
-  }, [])
+    return Array.from(map, ([value, label]) => ({ value, label }))
+  }, [items])
 
-  // aplica filtros
-  const data = useMemo(() => {
-    const list = (contasPagarMock as Item[]).slice()
-
+  // filtros (por cedente e período de VENCIMENTO)
+  const filtered = useMemo(() => {
+    const list = items.slice()
     const fromD = from ? new Date(from + 'T00:00:00') : null
     const toD = to ? new Date(to + 'T23:59:59') : null
 
     return list.filter((i) => {
-      // filtro por cedente
       if (cedente) {
         const key = i.cedenteId ?? i.cedenteNome ?? ''
         if (key !== cedente) return false
       }
-
-      // filtro por data (usa VENCIMENTO)
       const venc = getVencimento(i)
       const d = venc ? new Date(venc) : null
-
       if (fromD && d && d < fromD) return false
       if (toD && d && d > toD) return false
-
       return true
     })
-  }, [cedente, from, to])
+  }, [items, cedente, from, to])
 
   const headers = ['Descrição', 'Cedente', 'Emissão', 'Vencimento', 'Valor (R$)', 'Status']
-  const rows = data.map((i) => {
+  const rows = filtered.map((i) => {
     const emissao = fmtDate(i.data)
     const venc = fmtDate(getVencimento(i) || undefined)
 
-    // badge de status
     const badge =
       i.status === 'pago' ? (
         <span className="px-2 py-1 rounded-md text-xs bg-green-50 text-green-700 border border-green-200">pago</span>
@@ -95,13 +118,27 @@ export default function ContasAPagar() {
         <span className="px-2 py-1 rounded-md text-xs bg-yellow-50 text-yellow-700 border border-yellow-200">pendente</span>
       )
 
+    // seletor de status (opcional – ajuda nos testes, persiste no storage)
+    const statusSelect = (
+      <select
+        className="ml-2 text-xs border rounded-md bg-white px-1.5 py-1"
+        value={i.status}
+        onChange={(e) => updateStatus(i.id, e.target.value as Item['status'])}
+        title="Atualizar status"
+      >
+        <option value="pendente">pendente</option>
+        <option value="pago">pago</option>
+        <option value="atrasado">atrasado</option>
+      </select>
+    )
+
     return [
       i.descricao,
       i.cedenteNome || '—',
       emissao,
       venc,
       fmtMoney(i.valor),
-      badge,
+      <div key={`status-${i.id}`} className="flex items-center">{badge}{statusSelect}</div>,
     ]
   })
 
