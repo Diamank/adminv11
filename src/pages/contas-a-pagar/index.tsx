@@ -7,7 +7,7 @@ import { contasPagarSeed } from '@/mocks/contasPagar'
 type Item = ContaPagarItem
 const LS_KEY = 'contas_a_pagar_v1'
 
-// --- utils ---
+// ------ utils ------
 function getVencimento(i: Item) {
   return i.vencimento ?? i.nota?.vencimento ?? i.data
 }
@@ -32,7 +32,7 @@ function fmtMoney(v: number) {
   }
 }
 
-// --- storage local ---
+// ------ storage local ------
 function useContasStore() {
   const [items, setItems] = useState<Item[]>([])
 
@@ -64,7 +64,7 @@ function useContasStore() {
   return { items, updateStatus }
 }
 
-// --- ícone lupa ---
+// ------ ícone lupa ------
 function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
@@ -77,13 +77,14 @@ function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
 export default function ContasAPagar() {
   const { items, updateStatus } = useContasStore()
 
-  // controla visibilidade dos filtros
+  // visibilidade dos filtros
   const [showFilters, setShowFilters] = useState(false)
 
   // filtros
   const [cedente, setCedente] = useState<string>('') // '' = todos
   const [from, setFrom] = useState<string>('')       // yyyy-mm-dd
   const [to, setTo] = useState<string>('')
+  const [status, setStatus] = useState<string>('')   // '' = todos
 
   // opções do select de cedentes
   const cedentesOpts = useMemo(() => {
@@ -96,7 +97,7 @@ export default function ContasAPagar() {
     return Array.from(map, ([value, label]) => ({ value, label }))
   }, [items])
 
-  // aplica filtros (mesmo ocultos, continuam válidos)
+  // aplica filtros (mesmo ocultos, seguem ativos)
   const filtered = useMemo(() => {
     const list = items.slice()
     const fromD = from ? new Date(from + 'T00:00:00') : null
@@ -107,13 +108,15 @@ export default function ContasAPagar() {
         const key = i.cedenteId ?? i.cedenteNome ?? ''
         if (key !== cedente) return false
       }
+      if (status && i.status !== status) return false
+
       const venc = getVencimento(i)
       const d = venc ? new Date(venc) : null
       if (fromD && d && d < fromD) return false
       if (toD && d && d > toD) return false
       return true
     })
-  }, [items, cedente, from, to])
+  }, [items, cedente, status, from, to])
 
   const total = useMemo(() => filtered.reduce((acc, i) => acc + (i.valor || 0), 0), [filtered])
 
@@ -154,14 +157,14 @@ export default function ContasAPagar() {
     ]
   })
 
-  // --- PDF ---
+  // ------ PDF ------
   const handleGerarPDF = () => {
     const title = 'Relatório - Contas a Pagar'
     const filtroCedente = cedente
       ? (cedentesOpts.find(o => o.value === cedente)?.label ?? cedente)
       : 'Todos'
-    const periodo =
-      (from ? fmtDate(from) : '—') + ' a ' + (to ? fmtDate(to) : '—')
+    const periodo = (from ? fmtDate(from) : '—') + ' a ' + (to ? fmtDate(to) : '—')
+    const statusLabel = status || 'Todos'
 
     const rowsHtml = filtered.map(i => {
       const emissao = fmtDate(i.data)
@@ -201,7 +204,11 @@ export default function ContasAPagar() {
     <button onclick="window.print()">Imprimir / Salvar PDF</button>
   </div>
   <h1>${title}</h1>
-  <div class="muted">Cedente: <strong>${filtroCedente}</strong> • Período (vencimento): <strong>${periodo}</strong></div>
+  <div class="muted">
+    Cedente: <strong>${filtroCedente}</strong> •
+    Período (vencimento): <strong>${periodo}</strong> •
+    Status: <strong>${statusLabel}</strong>
+  </div>
   <table>
     <thead>
       <tr>
@@ -240,6 +247,7 @@ export default function ContasAPagar() {
     setCedente('')
     setFrom('')
     setTo('')
+    setStatus('')
   }
 
   return (
@@ -247,7 +255,7 @@ export default function ContasAPagar() {
       <div className="max-w-6xl mx-auto">
         {/* Barra de ações */}
         <div className="flex items-center gap-2 mb-3">
-          {/* Botão/lupa que revela filtros */}
+          {/* Botão/lupa para expandir filtros */}
           <button
             type="button"
             onClick={() => setShowFilters(v => !v)}
@@ -258,7 +266,7 @@ export default function ContasAPagar() {
             <SearchIcon className="h-4 w-4 text-gray-700" />
           </button>
 
-          {/* Filtros — aparecem só quando showFilters = true */}
+          {/* Filtros (visíveis somente quando showFilters = true) */}
           {showFilters && (
             <div className="flex flex-wrap items-end gap-3 flex-1">
               <div className="flex flex-col">
@@ -284,7 +292,6 @@ export default function ContasAPagar() {
                   className="border rounded-lg bg-white px-3 py-2"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
-                  placeholder="dd/mm/aaaa"
                 />
               </div>
 
@@ -295,8 +302,21 @@ export default function ContasAPagar() {
                   className="border rounded-lg bg-white px-3 py-2"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
-                  placeholder="dd/mm/aaaa"
                 />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm mb-1">Status</label>
+                <select
+                  className="border rounded-lg bg-white px-3 py-2 min-w-[10rem]"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="pago">Pago</option>
+                  <option value="atrasado">Atrasado</option>
+                </select>
               </div>
             </div>
           )}
