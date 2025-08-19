@@ -5,7 +5,6 @@ import type { ContaPagarItem } from '@/mocks/contasPagar'
 import { contasPagarSeed } from '@/mocks/contasPagar'
 
 type Item = ContaPagarItem
-
 const LS_KEY = 'contas_a_pagar_v1'
 
 // --- utils ---
@@ -40,9 +39,8 @@ function useContasStore() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY)
-      if (raw) {
-        setItems(JSON.parse(raw))
-      } else {
+      if (raw) setItems(JSON.parse(raw))
+      else {
         setItems(contasPagarSeed)
         localStorage.setItem(LS_KEY, JSON.stringify(contasPagarSeed))
       }
@@ -79,6 +77,10 @@ function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
 export default function ContasAPagar() {
   const { items, updateStatus } = useContasStore()
 
+  // controla visibilidade dos filtros
+  const [showFilters, setShowFilters] = useState(false)
+
+  // filtros
   const [cedente, setCedente] = useState<string>('') // '' = todos
   const [from, setFrom] = useState<string>('')       // yyyy-mm-dd
   const [to, setTo] = useState<string>('')
@@ -94,7 +96,7 @@ export default function ContasAPagar() {
     return Array.from(map, ([value, label]) => ({ value, label }))
   }, [items])
 
-  // aplica filtros
+  // aplica filtros (mesmo ocultos, continuam válidos)
   const filtered = useMemo(() => {
     const list = items.slice()
     const fromD = from ? new Date(from + 'T00:00:00') : null
@@ -152,7 +154,7 @@ export default function ContasAPagar() {
     ]
   })
 
-  // --- gera HTML para impressão/PDF ---
+  // --- PDF ---
   const handleGerarPDF = () => {
     const title = 'Relatório - Contas a Pagar'
     const filtroCedente = cedente
@@ -234,74 +236,80 @@ export default function ContasAPagar() {
     w.focus()
   }
 
+  const handleClear = () => {
+    setCedente('')
+    setFrom('')
+    setTo('')
+  }
+
   return (
     <AdminLayout>
       <div className="max-w-6xl mx-auto">
-        {/* Filtros */}
-        <div className="flex flex-wrap items-end gap-3 mb-3">
-          {/* Lupa antes dos inputs */}
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl border bg-white">
-            <SearchIcon className="h-4 w-4 text-gray-600" />
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm mb-1">Cedente</label>
-            <select
-              className="border rounded-lg bg-white px-3 py-2 min-w-[16rem]"
-              value={cedente}
-              onChange={(e) => setCedente(e.target.value)}
-            >
-              <option value="">Todos</option>
-              {cedentesOpts.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label || o.value}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm mb-1">Data inicial (vencimento)</label>
-            <input
-              type="date"
-              className="border rounded-lg bg-white px-3 py-2"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              placeholder="dd/mm/aaaa"
-            />
-          </div>
-
-          <div className="flex flex-col">
-            <label className="text-sm mb-1">Data final (vencimento)</label>
-            <input
-              type="date"
-              className="border rounded-lg bg-white px-3 py-2"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              placeholder="dd/mm/aaaa"
-            />
-          </div>
-
+        {/* Barra de ações */}
+        <div className="flex items-center gap-2 mb-3">
+          {/* Botão/lupa que revela filtros */}
           <button
             type="button"
-            className="ml-auto px-3 py-2 rounded-lg border bg-white"
-            onClick={() => {
-              setCedente('')
-              setFrom('')
-              setTo('')
-            }}
+            onClick={() => setShowFilters(v => !v)}
+            className="flex items-center justify-center w-9 h-9 rounded-xl border bg-white"
+            title={showFilters ? 'Ocultar filtros' : 'Mostrar filtros'}
+            aria-label="Filtros"
           >
-            Limpar filtros
+            <SearchIcon className="h-4 w-4 text-gray-700" />
           </button>
 
-          <button
-            type="button"
-            className="px-3 py-2 rounded-lg border bg-white"
-            onClick={handleGerarPDF}
-            title="Gerar relatório em PDF"
-          >
-            Gerar PDF
-          </button>
+          {/* Filtros — aparecem só quando showFilters = true */}
+          {showFilters && (
+            <div className="flex flex-wrap items-end gap-3 flex-1">
+              <div className="flex flex-col">
+                <label className="text-sm mb-1">Cedente</label>
+                <select
+                  className="border rounded-lg bg-white px-3 py-2 min-w-[16rem]"
+                  value={cedente}
+                  onChange={(e) => setCedente(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {cedentesOpts.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label || o.value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm mb-1">Data inicial (vencimento)</label>
+                <input
+                  type="date"
+                  className="border rounded-lg bg-white px-3 py-2"
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                  placeholder="dd/mm/aaaa"
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <label className="text-sm mb-1">Data final (vencimento)</label>
+                <input
+                  type="date"
+                  className="border rounded-lg bg-white px-3 py-2"
+                  value={to}
+                  onChange={(e) => setTo(e.target.value)}
+                  placeholder="dd/mm/aaaa"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Ações sempre visíveis */}
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" className="px-3 py-2 rounded-lg border bg-white" onClick={handleClear}>
+              Limpar filtros
+            </button>
+            <button type="button" className="px-3 py-2 rounded-lg border bg-white" onClick={handleGerarPDF}>
+              Gerar PDF
+            </button>
+          </div>
         </div>
 
         <Table
@@ -310,7 +318,7 @@ export default function ContasAPagar() {
           emptyText="Nenhum lançamento encontrado para os filtros aplicados."
         />
 
-        {/* Total geral */}
+        {/* Total geral (sempre visível e atualiza com filtros) */}
         <div className="mt-3 text-right text-sm">
           <span className="px-2 py-1 rounded-md bg-gray-100 border border-gray-200">
             Total: <strong>{fmtMoney(total)}</strong>
