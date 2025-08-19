@@ -7,7 +7,7 @@ import { contasPagarSeed } from '@/mocks/contasPagar'
 type Item = ContaPagarItem
 const LS_KEY = 'contas_a_pagar_v1'
 
-// ------ utils ------
+// ---------- utils ----------
 function getVencimento(i: Item) {
   return i.vencimento ?? i.nota?.vencimento ?? i.data
 }
@@ -31,8 +31,15 @@ function fmtMoney(v: number) {
     return `R$ ${Number(v || 0).toFixed(2)}`
   }
 }
+function normalizeStatus(s?: string) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
 
-// ------ storage local ------
+// ---------- storage local ----------
 function useContasStore() {
   const [items, setItems] = useState<Item[]>([])
 
@@ -64,7 +71,7 @@ function useContasStore() {
   return { items, updateStatus }
 }
 
-// ------ ícone lupa ------
+// ---------- ícone lupa ----------
 function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
@@ -97,18 +104,19 @@ export default function ContasAPagar() {
     return Array.from(map, ([value, label]) => ({ value, label }))
   }, [items])
 
-  // aplica filtros (mesmo ocultos, seguem ativos)
+  // aplica filtros
   const filtered = useMemo(() => {
     const list = items.slice()
     const fromD = from ? new Date(from + 'T00:00:00') : null
     const toD = to ? new Date(to + 'T23:59:59') : null
+    const wanted = normalizeStatus(status)
 
     return list.filter((i) => {
       if (cedente) {
         const key = i.cedenteId ?? i.cedenteNome ?? ''
         if (key !== cedente) return false
       }
-      if (status && i.status !== status) return false
+      if (wanted && normalizeStatus(i.status) !== wanted) return false
 
       const venc = getVencimento(i)
       const d = venc ? new Date(venc) : null
@@ -126,9 +134,9 @@ export default function ContasAPagar() {
     const venc = fmtDate(getVencimento(i) || undefined)
 
     const badge =
-      i.status === 'pago' ? (
+      normalizeStatus(i.status) === 'pago' ? (
         <span className="px-2 py-1 rounded-md text-xs bg-green-50 text-green-700 border border-green-200">pago</span>
-      ) : i.status === 'atrasado' ? (
+      ) : normalizeStatus(i.status) === 'atrasado' ? (
         <span className="px-2 py-1 rounded-md text-xs bg-red-50 text-red-700 border border-red-200">atrasado</span>
       ) : (
         <span className="px-2 py-1 rounded-md text-xs bg-yellow-50 text-yellow-700 border border-yellow-200">pendente</span>
@@ -137,7 +145,7 @@ export default function ContasAPagar() {
     const statusSelect = (
       <select
         className="ml-2 text-xs border rounded-md bg-white px-1.5 py-1"
-        value={i.status}
+        value={normalizeStatus(i.status)}
         onChange={(e) => updateStatus(i.id, e.target.value as Item['status'])}
         title="Atualizar status"
       >
@@ -157,7 +165,7 @@ export default function ContasAPagar() {
     ]
   })
 
-  // ------ PDF ------
+  // ---------- PDF ----------
   const handleGerarPDF = () => {
     const title = 'Relatório - Contas a Pagar'
     const filtroCedente = cedente
@@ -176,7 +184,7 @@ export default function ContasAPagar() {
           <td>${emissao}</td>
           <td>${venc}</td>
           <td style="text-align:right">${fmtMoney(i.valor)}</td>
-          <td>${i.status}</td>
+          <td>${normalizeStatus(i.status)}</td>
         </tr>
       `
     }).join('')
