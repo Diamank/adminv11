@@ -1,27 +1,35 @@
-// src/components/RiskBadge.tsx
-import React from 'react'
-
+// src/lib/riskStore.ts
 export type RiskLevel = 'alto' | 'moderado' | 'baixo' | 'nao_avaliado'
+const KEY = 'cedentes_risco_por_cnpj_v1'
 
-const label: Record<RiskLevel, string> = {
-  alto: 'Risco',
-  moderado: 'Risco moderado',
-  baixo: 'Sem risco',
-  nao_avaliado: 'Não analisado',
+function onlyDigits(s: string = '') {
+  return s.replace(/\D/g, '')
 }
 
-const colors: Record<RiskLevel, string> = {
-  alto: 'bg-red-500',
-  moderado: 'bg-yellow-400',
-  baixo: 'bg-green-500',
-  nao_avaliado: 'bg-gray-300',
+function safeGet(): Record<string, RiskLevel> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
 }
 
-export default function RiskBadge({ level }: { level: RiskLevel }) {
-  return (
-    <span className="inline-flex items-center gap-2 text-xs">
-      <span className={`h-2.5 w-2.5 rounded-full ${colors[level]}`} />
-      <span className="text-gray-700">{label[level]}</span>
-    </span>
-  )
+function safeSet(map: Record<string, RiskLevel>) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(KEY, JSON.stringify(map))
+  } catch {}
+}
+
+export function getRiskByCNPJ(cnpj: string): RiskLevel {
+  const map = safeGet()
+  return map[onlyDigits(cnpj)] ?? 'nao_avaliado'
+}
+
+export function setRiskByCNPJ(cnpj: string, level: RiskLevel) {
+  const map = safeGet()
+  map[onlyDigits(cnpj)] = level
+  safeSet(map)
 }
