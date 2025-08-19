@@ -1,4 +1,6 @@
+// src/pages/operacoes/index.tsx
 import Link from "next/link"
+import AdminLayout from "@/components/AdminLayout" // ✅ adicionar
 
 // Ícones SVG inline (sem dependências)
 function IconContrato() {
@@ -48,36 +50,34 @@ export default function Operacoes() {
   ]
 
   return (
-    <div className="p-6">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-2">Operações</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          Selecione uma ação para começar.
-        </p>
+    <AdminLayout> {/* ✅ envolver no layout para manter a sidebar */}
+      <div className="p-6">
+        <div className="max-w-5xl mx-auto">
+          <h1 className="text-2xl font-semibold mb-2">Operações</h1>
+          <p className="text-sm text-gray-500 mb-6">Selecione uma ação para começar.</p>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {cards.map((c, i) => (
-            <Link
-              key={i}
-              href={c.href}
-              className="group rounded-xl border bg-white p-4 shadow-sm hover:shadow-md hover:border-gray-300 transition"
-            >
-              <div className="flex items-start gap-4">
-                <div className="p-2.5 rounded-lg bg-gray-100 text-gray-700 group-hover:bg-gray-200">
-                  <span className={c.accent}>{c.icon}</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {cards.map((c, i) => (
+              <Link
+                key={i}
+                href={c.href}
+                className="group rounded-xl border bg-white p-4 shadow-sm hover:shadow-md hover:border-gray-300 transition"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="p-2.5 rounded-lg bg-gray-100 text-gray-700 group-hover:bg-gray-200">
+                    <span className={c.accent}>{c.icon}</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-base font-medium">{c.title}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{c.desc}</div>
+                  </div>
+                  <IconArrow />
                 </div>
-
-                <div className="flex-1">
-                  <div className="text-base font-medium">{c.title}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">{c.desc}</div>
-                </div>
-
-                <IconArrow />
-              </div>
-            </Link>
-          ))}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </AdminLayout>
   )
 }
