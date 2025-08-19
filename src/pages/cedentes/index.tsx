@@ -3,12 +3,10 @@ import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
 import { cedentesMock } from '@/mocks/cedentes'
 import Link from 'next/link'
+import RiskBadge, { RiskLevel } from '@/components/RiskBadge'
 
 function normalize(str: string = '') {
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 }
 function onlyDigits(str: string = '') {
   return str.replace(/\D/g, '')
@@ -24,12 +22,40 @@ function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
+// chave para localStorage
+const LS_KEY = 'cedentes_risco_v1'
+
+// lê/salva risco no localStorage
+function useRiskStore() {
+  const [map, setMap] = useState<Record<string, RiskLevel>>({})
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY)
+      if (raw) setMap(JSON.parse(raw))
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(map))
+    } catch {}
+  }, [map])
+
+  const setRisk = (id: string, level: RiskLevel) =>
+    setMap((m) => ({ ...m, [id]: level }))
+
+  const getRisk = (id: string): RiskLevel => map[id] ?? 'nao_avaliado'
+
+  return { getRisk, setRisk }
+}
+
 export default function Cedentes() {
   const [query, setQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { getRisk, setRisk } = useRiskStore()
 
-  // foca no input quando abre
   useEffect(() => {
     if (showSearch) inputRef.current?.focus()
   }, [showSearch])
@@ -37,28 +63,45 @@ export default function Cedentes() {
   const data = useMemo(() => {
     const q = query.trim()
     if (!q) return cedentesMock
-
     const hasNumber = /\d/.test(q)
 
     return cedentesMock.filter((c) => {
-      const name = c.razao || (c as any).nome || '' // cobre ambos formatos
+      const name = (c as any).razao || (c as any).nome || ''
       const nameMatch = normalize(name).includes(normalize(q))
       const cnpjMatch = onlyDigits(c.cnpj).includes(onlyDigits(q))
       return hasNumber ? cnpjMatch || nameMatch : nameMatch
     })
   }, [query])
 
-  const headers = ['Razão Social', 'CNPJ', 'Endereço', 'Conta bancária', 'Criado', 'Ações']
-  const rows = data.map((c) => [
-    c.razao || (c as any).nome || '—',
-    c.cnpj,
-    c.endereco || '—',
-    c.contaBancaria || '—',
-    c.criadoEm || '—',
-    <Link key={c.id} className="text-blue-600" href={`/cedentes/novo?edit=${c.id}`}>
-      Editar
-    </Link>,
-  ])
+  const headers = ['Razão Social', 'CNPJ', 'Endereço', 'Conta bancária', 'Risco', 'Criado', 'Ações']
+  const rows = data.map((c) => {
+    const current = getRisk(c.id)
+    return [
+      (c as any).razao || (c as any).nome || '—',
+      c.cnpj,
+      c.endereco || '—',
+      c.contaBancaria || '—',
+      <div key={`risk-${c.id}`} className="flex items-center gap-3">
+        <RiskBadge level={current} />
+        {/* seletor simples para marcar a análise */}
+        <select
+          value={current}
+          onChange={(e) => setRisk(c.id, e.target.value as RiskLevel)}
+          className="text-xs border rounded-lg px-2 py-1 bg-white"
+          title="Atualizar avaliação de risco"
+        >
+          <option value="nao_avaliado">Não analisado</option>
+          <option value="alto">Risco</option>
+          <option value="moderado">Risco moderado</option>
+          <option value="baixo">Sem risco</option>
+        </select>
+      </div>,
+      c.criadoEm || '—',
+      <Link key={c.id} className="text-blue-600" href={`/cedentes/novo?edit=${c.id}`}>
+        Editar
+      </Link>,
+    ]
+  })
 
   return (
     <AdminLayout>
@@ -68,7 +111,6 @@ export default function Cedentes() {
             + Novo cedente
           </Link>
 
-          {/* Botão de lupa -> expande input */}
           <div className="flex items-center gap-2">
             {!showSearch ? (
               <button
@@ -105,7 +147,6 @@ export default function Cedentes() {
           </div>
         </div>
 
-        {/* contador de resultados */}
         <div className="text-xs text-gray-500 mb-2">
           {data.length} {data.length === 1 ? 'cedente' : 'cedentes'} encontrados
         </div>
