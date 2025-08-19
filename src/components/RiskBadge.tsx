@@ -1,3 +1,4 @@
+// src/components/RiskBadge.tsx
 import React from 'react'
 
 export type RiskLevel = 'alto' | 'moderado' | 'baixo' | 'nao_avaliado'
