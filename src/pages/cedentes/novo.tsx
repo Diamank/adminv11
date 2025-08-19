@@ -1,7 +1,7 @@
 import AdminLayout from '@/components/AdminLayout'
 import { useState } from 'react'
 
-type Risco = 'sem_risco' | 'risco'
+type Risco = 'sem_risco' | 'moderado' | 'risco'
 
 export default function NovoCedente() {
   const [form, setForm] = useState({
@@ -10,15 +10,16 @@ export default function NovoCedente() {
     endereco: '',
     contaBancaria: '',
   })
-  const [risco, setRisco] = useState<Risco>('sem_risco') // ⬅️ novo
+  const [risco, setRisco] = useState<Risco>('sem_risco')
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // aqui você envia ao backend/Supabase. Ex.: supabase.from('cedentes').insert({...form, risco})
+    // aqui você envia ao backend/Supabase. Exemplo:
+    // await supabase.from('cedentes').insert({...form, risco})
     alert(`Cedente salvo (mock):
 CNPJ: ${form.cnpj}
 Razão: ${form.razao}
-Risco: ${risco === 'risco' ? 'Risco' : 'Sem risco'}`)
+Risco: ${risco}`)
   }
 
   return (
@@ -85,6 +86,21 @@ Risco: ${risco === 'risco' ? 'Risco' : 'Sem risco'}`)
               <input
                 type="radio"
                 name="risco"
+                value="moderado"
+                checked={risco === 'moderado'}
+                onChange={() => setRisco('moderado')}
+                className="h-4 w-4"
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                <span className="text-sm text-gray-700">Risco moderado</span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="risco"
                 value="risco"
                 checked={risco === 'risco'}
                 onChange={() => setRisco('risco')}
@@ -100,7 +116,11 @@ Risco: ${risco === 'risco' ? 'Risco' : 'Sem risco'}`)
 
         <div className="pt-2 flex items-center gap-2">
           <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
-          <button type="button" className="px-3 py-2 rounded-lg border bg-white text-gray-400 cursor-not-allowed" disabled>
+          <button
+            type="button"
+            className="px-3 py-2 rounded-lg border bg-white text-gray-400 cursor-not-allowed"
+            disabled
+          >
             Anexar documentos (em breve)
           </button>
         </div>
