@@ -12,10 +12,9 @@ type Contrato = {
   tipo: TipoContrato
   limite: number
   criadoEm: string
-  // anexo (metadados + URL temporária para visualizar)
   anexoNome?: string
   anexoTamanho?: number
-  anexoPreviewUrl?: string
+  anexoPreviewUrl?: string // URL temporária (URL.createObjectURL)
 }
 
 const LS_KEY = 'ops_contratos_v2'
@@ -47,9 +46,8 @@ export default function NovoContrato() {
 
   const remover = (id: string) => {
     if (!confirm('Excluir contrato?')) return
-    // revoga urls temporárias para não vazar memória
-    const target = itens.find(i => i.id === id)
-    if (target?.anexoPreviewUrl) URL.revokeObjectURL(target.anexoPreviewUrl)
+    const alvo = itens.find(i => i.id === id)
+    if (alvo?.anexoPreviewUrl) URL.revokeObjectURL(alvo.anexoPreviewUrl)
     persist(itens.filter((i) => i.id !== id))
   }
 
@@ -63,7 +61,7 @@ export default function NovoContrato() {
     )
   }, [itens, busca])
 
-  // -------- FORM (colapsado por padrão) --------
+  // -------- FORM (inicia fechado) --------
   const [mostrarForm, setMostrarForm] = useState(false)
   const [cedenteId, setCedenteId] = useState('')
   const [tipo, setTipo] = useState<TipoContrato>('Cessão de crédito - Materiais')
@@ -95,7 +93,6 @@ export default function NovoContrato() {
     e.preventDefault()
     if (!cedenteId || limite === '' || Number(limite) <= 0) return
 
-    // cria URL temporária para visualização (não persiste após reload)
     const previewUrl = arquivo ? URL.createObjectURL(arquivo) : undefined
 
     const novo: Contrato = {
@@ -120,7 +117,6 @@ export default function NovoContrato() {
   return (
     <AdminLayout>
       <div className="max-w-5xl mx-auto space-y-6">
-
         {/* Header da LISTA + botão de abrir/fechar formulário */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Contratos</h1>
@@ -175,7 +171,9 @@ export default function NovoContrato() {
                   <td className="px-4 py-2">
                     {i.anexoNome ? (
                       <div className="flex items-center gap-3">
-                        <span className="truncate max-w-[180px]" title={i.anexoNome}>{i.anexoNome}</span>
+                        <span className="truncate max-w-[180px]" title={i.anexoNome}>
+                          {i.anexoNome}
+                        </span>
                         {i.anexoPreviewUrl && (
                           <a
                             className="px-2 py-1 border rounded hover:bg-gray-50"
@@ -232,4 +230,65 @@ export default function NovoContrato() {
               <div>
                 <label className="block text-sm mb-1">CNPJ do Cedente</label>
                 <input
-                  className="w-full border rounded-lg
+                  className="w-full border rounded-lg px-3 py-2 bg-gray-50"
+                  value={cedenteSel?.cnpj || ''}
+                  readOnly
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Tipo de contrato</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  value={tipo}
+                  onChange={(e) => setTipo(e.target.value as TipoContrato)}
+                >
+                  <option value="Cessão de crédito - Materiais">Cessão de crédito - Materiais</option>
+                  <option value="Cessão de crédito - Serviços">Cessão de crédito - Serviços</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Limite (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  value={limite}
+                  onChange={(e) => setLimite(e.target.value === '' ? '' : Number(e.target.value))}
+                  required
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-sm mb-1">Arquivo do contrato (PDF/Imagem)</label>
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+                />
+                {arquivo && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Selecionado: <b>{arquivo.name}</b> — {(arquivo.size / 1024).toFixed(1)} KB
+                  </p>
+                )}
+              </div>
+
+              <div className="sm:col-span-2 pt-2 flex gap-3">
+                <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
+                <button
+                  type="button"
+                  onClick={() => { limparForm(); setMostrarForm(false) }}
+                  className="px-4 py-2 rounded-xl border"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+    </AdminLayout>
+  )
+}
