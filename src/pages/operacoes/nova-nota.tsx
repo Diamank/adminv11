@@ -3,6 +3,92 @@ import AdminLayout from '@/components/AdminLayout'
 import { cedentesMock } from '@/mocks/cedentes'
 import { sacadosMock } from '@/mocks/sacados'
 
+/* ================== UploadBox (drag&drop + estilizado) ================== */
+function UploadBox({
+  label,
+  accept,
+  file,
+  onChange,
+}: {
+  label: string
+  accept?: string
+  file: File | null
+  onChange: (f: File | null) => void
+}) {
+  const inputId = `up-${label.replace(/\W+/g, '').toLowerCase()}`
+
+  const onSelect = (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange(e.target.files?.[0] ?? null)
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const f = e.dataTransfer.files?.[0]
+    if (!f) return
+    if (accept?.includes('.pdf') && !f.name.toLowerCase().endsWith('.pdf') && !accept?.includes('image/*')) {
+      alert('Apenas PDF permitido aqui.')
+      return
+    }
+    if (accept?.includes('image/*') && !f.type.startsWith('image/') && !f.name.toLowerCase().match(/\.(png|jpe?g|webp|gif)$/)) {
+      alert('Envie uma imagem válida.')
+      return
+    }
+    onChange(f)
+  }
+
+  const human = (n: number) =>
+    n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(2)} MB`
+
+  return (
+    <div className="space-y-2">
+      <label htmlFor={inputId} className="block text-sm mb-1">{label}</label>
+
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+        className={[
+          "group relative w-full rounded-2xl border-2 border-dashed p-4",
+          "bg-white hover:border-gray-400 transition",
+          file ? "border-gray-300" : "border-gray-300",
+        ].join(" ")}
+      >
+        {!file ? (
+          <label htmlFor={inputId} className="flex cursor-pointer items-center gap-3">
+            <svg width="28" height="28" viewBox="0 0 24 24" className="opacity-70">
+              <path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm1 7H8V7h7z"/>
+            </svg>
+            <div className="flex-1">
+              <div className="text-sm font-medium">Arraste e solte o arquivo aqui</div>
+              <div className="text-xs text-gray-500">ou clique para escolher (aceita {accept || 'arquivos'})</div>
+            </div>
+          </label>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-medium">{file.name}</div>
+              <div className="text-xs text-gray-500">{human(file.size)}</div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <label htmlFor={inputId} className="px-3 py-1.5 text-sm rounded-lg border cursor-pointer hover:bg-gray-50">
+                Trocar
+              </label>
+              <button
+                type="button"
+                onClick={() => onChange(null)}
+                className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50"
+              >
+                Remover
+              </button>
+            </div>
+          </div>
+        )}
+
+        <input id={inputId} type="file" accept={accept} className="hidden" onChange={onSelect} />
+      </div>
+    </div>
+  )
+}
+/* ======================================================================= */
+
 type AnexoTipo = 'nota_fiscal' | 'boleto' | 'aditivo'
 type Anexo = { tipo: AnexoTipo; nome: string; tamanho: number; previewUrl?: string }
 
@@ -28,7 +114,6 @@ type Nota = {
 }
 
 const LS_KEY = 'ops_notas_v2'
-
 const money = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const diffDias = (a: string, b: string) => {
   if (!a || !b) return 0
@@ -53,17 +138,13 @@ export default function NovaNota() {
 
   const persist = (next: Nota[]) => {
     setItens(next)
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(next))
-    } catch {}
+    try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch {}
   }
 
   const remover = (id: string) => {
     if (!confirm('Excluir nota?')) return
     const alvo = itens.find((n) => n.id === id)
-    alvo?.anexos?.forEach((a) => {
-      if (a.previewUrl) URL.revokeObjectURL(a.previewUrl)
-    })
+    alvo?.anexos?.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
     persist(itens.filter((n) => n.id !== id))
   }
 
@@ -106,53 +187,19 @@ export default function NovaNota() {
   }, [valor, taxaMes, dias])
 
   const limparForm = () => {
-    setCedenteId('')
-    setSacadoId('')
-    setNumero('')
-    setEmissao('')
-    setVencimento('')
-    setValor('')
-    setTaxaMes('')
-    setNfFile(null)
-    setBoletoFile(null)
-    setAditivoFile(null)
+    setCedenteId(''); setSacadoId(''); setNumero('')
+    setEmissao(''); setVencimento(''); setValor(''); setTaxaMes('')
+    setNfFile(null); setBoletoFile(null); setAditivoFile(null)
   }
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (
-      !cedenteId ||
-      !sacadoId ||
-      !numero ||
-      !emissao ||
-      !vencimento ||
-      valor === '' ||
-      taxaMes === ''
-    )
-      return
+    if (!cedenteId || !sacadoId || !numero || !emissao || !vencimento || valor === '' || taxaMes === '') return
 
     const anexos: Anexo[] = []
-    if (nfFile)
-      anexos.push({
-        tipo: 'nota_fiscal',
-        nome: nfFile.name,
-        tamanho: nfFile.size,
-        previewUrl: URL.createObjectURL(nfFile),
-      })
-    if (boletoFile)
-      anexos.push({
-        tipo: 'boleto',
-        nome: boletoFile.name,
-        tamanho: boletoFile.size,
-        previewUrl: URL.createObjectURL(boletoFile),
-      })
-    if (aditivoFile)
-      anexos.push({
-        tipo: 'aditivo',
-        nome: aditivoFile.name,
-        tamanho: aditivoFile.size,
-        previewUrl: URL.createObjectURL(aditivoFile),
-      })
+    if (nfFile) anexos.push({ tipo: 'nota_fiscal', nome: nfFile.name, tamanho: nfFile.size, previewUrl: URL.createObjectURL(nfFile) })
+    if (boletoFile) anexos.push({ tipo: 'boleto', nome: boletoFile.name, tamanho: boletoFile.size, previewUrl: URL.createObjectURL(boletoFile) })
+    if (aditivoFile) anexos.push({ tipo: 'aditivo', nome: aditivoFile.name, tamanho: aditivoFile.size, previewUrl: URL.createObjectURL(aditivoFile) })
 
     const novo: Nota = {
       id: 'NF-' + Date.now(),
@@ -163,8 +210,7 @@ export default function NovaNota() {
       sacadoNome: (sacado as any)?.razao || (sacado as any)?.nome || '',
       cnpjSacado: sacado?.cnpj || '',
       numero,
-      emissao,
-      vencimento,
+      emissao, vencimento,
       dias,
       valor: Number(valor),
       taxaMes: Number(taxaMes),
@@ -174,7 +220,6 @@ export default function NovaNota() {
       anexos,
       status: 'pendente',
     }
-
     persist([novo, ...itens])
     limparForm()
     setMostrarForm(false)
@@ -184,6 +229,7 @@ export default function NovaNota() {
   return (
     <AdminLayout>
       <div className="max-w-6xl mx-auto space-y-6">
+        {/* Header + botão abrir/fechar formulário */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Notas</h1>
           <button
@@ -227,11 +273,7 @@ export default function NovaNota() {
             </thead>
             <tbody>
               {itensFiltrados.length === 0 && (
-                <tr>
-                  <td colSpan={14} className="px-4 py-6 text-center text-gray-500">
-                    Sem registros.
-                  </td>
-                </tr>
+                <tr><td colSpan={14} className="px-4 py-6 text-center text-gray-500">Sem registros.</td></tr>
               )}
               {itensFiltrados.map((n) => (
                 <tr key={n.id} className="border-t">
@@ -259,23 +301,14 @@ export default function NovaNota() {
                             rel="noreferrer"
                             title={a.nome}
                           >
-                            {a.tipo === 'nota_fiscal'
-                              ? 'Nota Fiscal'
-                              : a.tipo === 'boleto'
-                              ? 'Boleto'
-                              : 'Aditivo'}
+                            {a.tipo === 'nota_fiscal' ? 'Nota Fiscal' : a.tipo === 'boleto' ? 'Boleto' : 'Aditivo'}
                           </a>
                         ))}
                       </div>
-                    ) : (
-                      <span className="text-gray-400">—</span>
-                    )}
+                    ) : <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-4 py-2">
-                    <button
-                      className="px-2 py-1 border rounded text-red-600"
-                      onClick={() => remover(n.id)}
-                    >
+                    <button className="px-2 py-1 border rounded text-red-600" onClick={() => remover(n.id)}>
                       Excluir
                     </button>
                   </td>
@@ -309,11 +342,7 @@ export default function NovaNota() {
               </div>
               <div>
                 <label className="block text-sm mb-1">CNPJ do Cedente</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-50"
-                  value={cedente?.cnpj || ''}
-                  readOnly
-                />
+                <input className="w-full border rounded-lg px-3 py-2 bg-gray-50" value={cedente?.cnpj || ''} readOnly />
               </div>
 
               <div>
@@ -334,42 +363,21 @@ export default function NovaNota() {
               </div>
               <div>
                 <label className="block text-sm mb-1">CNPJ do Sacado</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-50"
-                  value={sacado?.cnpj || ''}
-                  readOnly
-                />
+                <input className="w-full border rounded-lg px-3 py-2 bg-gray-50" value={sacado?.cnpj || ''} readOnly />
               </div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm mb-1">Número da Nota</label>
-                <input
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                  value={numero}
-                  onChange={(e) => setNumero(e.target.value)}
-                  required
-                />
+                <input className="w-full border rounded-lg px-3 py-2 bg-white" value={numero} onChange={(e) => setNumero(e.target.value)} required />
               </div>
 
               <div>
                 <label className="block text-sm mb-1">Data de Emissão</label>
-                <input
-                  type="date"
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                  value={emissao}
-                  onChange={(e) => setEmissao(e.target.value)}
-                  required
-                />
+                <input type="date" className="w-full border rounded-lg px-3 py-2 bg-white" value={emissao} onChange={(e) => setEmissao(e.target.value)} required />
               </div>
               <div>
                 <label className="block text-sm mb-1">Data de Vencimento</label>
-                <input
-                  type="date"
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                  value={vencimento}
-                  onChange={(e) => setVencimento(e.target.value)}
-                  required
-                />
+                <input type="date" className="w-full border rounded-lg px-3 py-2 bg-white" value={vencimento} onChange={(e) => setVencimento(e.target.value)} required />
               </div>
 
               <div>
@@ -379,9 +387,7 @@ export default function NovaNota() {
                   step="0.01"
                   className="w-full border rounded-lg px-3 py-2 bg-white"
                   value={valor}
-                  onChange={(e) =>
-                    setValor(e.target.value === '' ? '' : Number(e.target.value))
-                  }
+                  onChange={(e) => setValor(e.target.value === '' ? '' : Number(e.target.value))}
                   required
                 />
               </div>
@@ -392,9 +398,7 @@ export default function NovaNota() {
                   step="0.01"
                   className="w-full border rounded-lg px-3 py-2 bg-white"
                   value={taxaMes}
-                  onChange={(e) =>
-                    setTaxaMes(e.target.value === '' ? '' : Number(e.target.value))
-                  }
+                  onChange={(e) => setTaxaMes(e.target.value === '' ? '' : Number(e.target.value))}
                   required
                 />
               </div>
@@ -419,47 +423,18 @@ export default function NovaNota() {
                 </div>
               </div>
 
-              {/* anexos */}
+              {/* anexos (bonitos) */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm mb-1">Anexo — Nota Fiscal</label>
-                  <input
-                    type="file"
-                    accept=".pdf,image/*"
-                    className="w-full border rounded-lg px-3 py-2 bg-white"
-                    onChange={(e) => setNfFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Anexo — Boleto</label>
-                  <input
-                    type="file"
-                    accept=".pdf,image/*"
-                    className="w-full border rounded-lg px-3 py-2 bg-white"
-                    onChange={(e) => setBoletoFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Anexo — Aditivo</label>
-                  <input
-                    type="file"
-                    accept=".pdf,image/*"
-                    className="w-full border rounded-lg px-3 py-2 bg-white"
-                    onChange={(e) => setAditivoFile(e.target.files?.[0] ?? null)}
-                  />
-                </div>
+                <UploadBox label="Anexo — Nota Fiscal" accept=".pdf,image/*" file={nfFile} onChange={setNfFile} />
+                <UploadBox label="Anexo — Boleto" accept=".pdf,image/*" file={boletoFile} onChange={setBoletoFile} />
+                <UploadBox label="Anexo — Aditivo" accept=".pdf,image/*" file={aditivoFile} onChange={setAditivoFile} />
               </div>
 
               <div className="md:col-span-2 pt-2 flex gap-3">
-                <button className="px-4 py-2 rounded-xl bg-black text-white">
-                  Salvar
-                </button>
+                <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
                 <button
                   type="button"
-                  onClick={() => {
-                    limparForm()
-                    setMostrarForm(false)
-                  }}
+                  onClick={() => { limparForm(); setMostrarForm(false) }}
                   className="px-4 py-2 rounded-xl border"
                 >
                   Cancelar
