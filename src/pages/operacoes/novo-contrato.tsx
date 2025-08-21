@@ -12,11 +12,15 @@ type Contrato = {
   tipo: TipoContrato
   limite: number
   criadoEm: string
+  // anexo (metadados + URL temporária para visualizar)
+  anexoNome?: string
+  anexoTamanho?: number
+  anexoPreviewUrl?: string
 }
 
 const LS_KEY = 'ops_contratos_v2'
 
-// util
+// utils
 const money = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
@@ -43,6 +47,9 @@ export default function NovoContrato() {
 
   const remover = (id: string) => {
     if (!confirm('Excluir contrato?')) return
+    // revoga urls temporárias para não vazar memória
+    const target = itens.find(i => i.id === id)
+    if (target?.anexoPreviewUrl) URL.revokeObjectURL(target.anexoPreviewUrl)
     persist(itens.filter((i) => i.id !== id))
   }
 
@@ -61,6 +68,7 @@ export default function NovoContrato() {
   const [cedenteId, setCedenteId] = useState('')
   const [tipo, setTipo] = useState<TipoContrato>('Cessão de crédito - Materiais')
   const [limite, setLimite] = useState<number | ''>('')
+  const [arquivo, setArquivo] = useState<File | null>(null)
 
   const cedentesOpts = useMemo(
     () =>
@@ -80,11 +88,15 @@ export default function NovoContrato() {
     setCedenteId('')
     setTipo('Cessão de crédito - Materiais')
     setLimite('')
+    setArquivo(null)
   }
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!cedenteId || limite === '' || Number(limite) <= 0) return
+
+    // cria URL temporária para visualização (não persiste após reload)
+    const previewUrl = arquivo ? URL.createObjectURL(arquivo) : undefined
 
     const novo: Contrato = {
       id: 'CT-' + Date.now(),
@@ -94,7 +106,11 @@ export default function NovoContrato() {
       tipo,
       limite: Number(limite),
       criadoEm: new Date().toISOString().slice(0, 10),
+      anexoNome: arquivo?.name,
+      anexoTamanho: arquivo?.size,
+      anexoPreviewUrl: previewUrl,
     }
+
     persist([novo, ...itens])
     limparForm()
     setMostrarForm(false)
@@ -131,11 +147,12 @@ export default function NovoContrato() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left">
-                <th className="px-4 py-2">Contrato</th>
+                <th className="px-4 py-2">#</th>
                 <th className="px-4 py-2">Cedente</th>
                 <th className="px-4 py-2">CNPJ</th>
                 <th className="px-4 py-2">Tipo</th>
                 <th className="px-4 py-2">Limite</th>
+                <th className="px-4 py-2">Anexo</th>
                 <th className="px-4 py-2">Criado</th>
                 <th className="px-4 py-2">Ações</th>
               </tr>
@@ -143,7 +160,7 @@ export default function NovoContrato() {
             <tbody>
               {itensFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
+                  <td colSpan={8} className="px-4 py-6 text-center text-gray-500">
                     Sem registros.
                   </td>
                 </tr>
@@ -155,6 +172,25 @@ export default function NovoContrato() {
                   <td className="px-4 py-2">{i.cnpjCedente}</td>
                   <td className="px-4 py-2">{i.tipo}</td>
                   <td className="px-4 py-2">{money(i.limite)}</td>
+                  <td className="px-4 py-2">
+                    {i.anexoNome ? (
+                      <div className="flex items-center gap-3">
+                        <span className="truncate max-w-[180px]" title={i.anexoNome}>{i.anexoNome}</span>
+                        {i.anexoPreviewUrl && (
+                          <a
+                            className="px-2 py-1 border rounded hover:bg-gray-50"
+                            href={i.anexoPreviewUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Ver
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2">{i.criadoEm}</td>
                   <td className="px-4 py-2">
                     <button
@@ -196,50 +232,4 @@ export default function NovoContrato() {
               <div>
                 <label className="block text-sm mb-1">CNPJ do Cedente</label>
                 <input
-                  className="w-full border rounded-lg px-3 py-2 bg-gray-50"
-                  value={cedenteSel?.cnpj || ''}
-                  readOnly
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm mb-1">Tipo de contrato</label>
-                <select
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                  value={tipo}
-                  onChange={(e) => setTipo(e.target.value as TipoContrato)}
-                >
-                  <option value="Cessão de crédito - Materiais">Cessão de crédito - Materiais</option>
-                  <option value="Cessão de crédito - Serviços">Cessão de crédito - Serviços</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm mb-1">Limite (R$)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
-                  value={limite}
-                  onChange={(e) => setLimite(e.target.value === '' ? '' : Number(e.target.value))}
-                  required
-                />
-              </div>
-
-              <div className="sm:col-span-2 pt-2 flex gap-3">
-                <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
-                <button
-                  type="button"
-                  onClick={() => { limparForm(); setMostrarForm(false) }}
-                  className="px-4 py-2 rounded-xl border"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-      </div>
-    </AdminLayout>
-  )
-}
+                  className="w-full border rounded-lg
