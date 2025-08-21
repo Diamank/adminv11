@@ -24,14 +24,6 @@ function UploadBox({
     e.preventDefault()
     const f = e.dataTransfer.files?.[0]
     if (!f) return
-    if (accept?.includes('.pdf') && !f.name.toLowerCase().endsWith('.pdf') && !accept?.includes('image/*')) {
-      alert('Apenas PDF permitido aqui.')
-      return
-    }
-    if (accept?.includes('image/*') && !f.type.startsWith('image/') && !f.name.toLowerCase().match(/\.(png|jpe?g|webp|gif)$/)) {
-      alert('Envie uma imagem válida.')
-      return
-    }
     onChange(f)
   }
 
@@ -45,11 +37,7 @@ function UploadBox({
       <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
-        className={[
-          "group relative w-full rounded-2xl border-2 border-dashed p-4",
-          "bg-white hover:border-gray-400 transition",
-          file ? "border-gray-300" : "border-gray-300",
-        ].join(" ")}
+        className="group relative w-full rounded-2xl border-2 border-dashed p-4 bg-white hover:border-gray-400 transition"
       >
         {!file ? (
           <label htmlFor={inputId} className="flex cursor-pointer items-center gap-3">
@@ -106,14 +94,19 @@ type Nota = {
   dias: number
   valor: number
   taxaMes: number // % a.m.
-  desconto: number
+  // taxas extras (R$)
+  tarifaBancaria?: number
+  tarifaRegistro?: number
+  custosOperacionais?: number
+  desconto: number // desconto financeiro (taxa % sobre dias)
+  descontoExtras: number // soma das taxas extras
   liquidoCedente: number
   valorAReceber: number
   anexos: Anexo[]
   status: 'pendente' | 'pago' | 'cancelado'
 }
 
-const LS_KEY = 'ops_notas_v2'
+const LS_KEY = 'ops_notas_v3'
 const money = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const diffDias = (a: string, b: string) => {
   if (!a || !b) return 0
@@ -126,6 +119,7 @@ export default function NovaNota() {
   // LISTA
   const [itens, setItens] = useState<Nota[]>([])
   const [busca, setBusca] = useState('')
+  const [expandidoId, setExpandidoId] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -168,6 +162,11 @@ export default function NovaNota() {
   const [valor, setValor] = useState<number | ''>('')
   const [taxaMes, setTaxaMes] = useState<number | ''>('')
 
+  // taxas extras (R$)
+  const [tarifaBancaria, setTarifaBancaria] = useState<number | ''>('')
+  const [tarifaRegistro, setTarifaRegistro] = useState<number | ''>('')
+  const [custosOperacionais, setCustosOperacionais] = useState<number | ''>('')
+
   // anexos
   const [nfFile, setNfFile] = useState<File | null>(null)
   const [boletoFile, setBoletoFile] = useState<File | null>(null)
@@ -177,24 +176,33 @@ export default function NovaNota() {
   const sacado = useMemo(() => sacadosMock.find((s) => s.id === sacadoId), [sacadoId])
 
   const dias = useMemo(() => diffDias(emissao, vencimento), [emissao, vencimento])
+
   const calc = useMemo(() => {
     const v = typeof valor === 'number' ? valor : 0
     const t = typeof taxaMes === 'number' ? taxaMes : 0
-    const desconto = v * (t / 100) * (dias / 30)
-    const liquido = Math.max(0, v - desconto)
+    const dFinanceiro = v * (t / 100) * (dias / 30)
+    const extras =
+      (typeof tarifaBancaria === 'number' ? tarifaBancaria : 0) +
+      (typeof tarifaRegistro === 'number' ? tarifaRegistro : 0) +
+      (typeof custosOperacionais === 'number' ? custosOperacionais : 0)
+    const liquido = Math.max(0, v - dFinanceiro - extras)
     const receber = v // nominal
-    return { desconto, liquido, receber }
-  }, [valor, taxaMes, dias])
+    return { dFinanceiro, extras, liquido, receber }
+  }, [valor, taxaMes, dias, tarifaBancaria, tarifaRegistro, custosOperacionais])
 
   const limparForm = () => {
     setCedenteId(''); setSacadoId(''); setNumero('')
     setEmissao(''); setVencimento(''); setValor(''); setTaxaMes('')
+    setTarifaBancaria(''); setTarifaRegistro(''); setCustosOperacionais('')
     setNfFile(null); setBoletoFile(null); setAditivoFile(null)
   }
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!cedenteId || !sacadoId || !numero || !emissao || !vencimento || valor === '' || taxaMes === '') return
+    if (
+      !cedenteId || !sacadoId || !numero || !emissao || !vencimento ||
+      valor === '' || taxaMes === ''
+    ) return
 
     const anexos: Anexo[] = []
     if (nfFile) anexos.push({ tipo: 'nota_fiscal', nome: nfFile.name, tamanho: nfFile.size, previewUrl: URL.createObjectURL(nfFile) })
@@ -214,17 +222,36 @@ export default function NovaNota() {
       dias,
       valor: Number(valor),
       taxaMes: Number(taxaMes),
-      desconto: calc.desconto,
+      tarifaBancaria: typeof tarifaBancaria === 'number' ? tarifaBancaria : 0,
+      tarifaRegistro: typeof tarifaRegistro === 'number' ? tarifaRegistro : 0,
+      custosOperacionais: typeof custosOperacionais === 'number' ? custosOperacionais : 0,
+      desconto: calc.dFinanceiro,
+      descontoExtras: calc.extras,
       liquidoCedente: calc.liquido,
       valorAReceber: calc.receber,
       anexos,
       status: 'pendente',
     }
+
     persist([novo, ...itens])
     limparForm()
     setMostrarForm(false)
     alert('Nota salva!')
   }
+
+  // Helpers de inputs com adornos
+  const InputMoney = (props: any) => (
+    <div className="relative">
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R$</span>
+      <input {...props} className={"w-full border rounded-lg px-8 py-2 bg-white " + (props.className ?? '')} />
+    </div>
+  )
+  const InputPercent = (props: any) => (
+    <div className="relative">
+      <input {...props} className={"w-full border rounded-lg px-3 py-2 bg-white pr-10 " + (props.className ?? '')} />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
+    </div>
+  )
 
   return (
     <AdminLayout>
@@ -250,70 +277,40 @@ export default function NovaNota() {
           />
         </div>
 
-        {/* LISTA */}
-        <div className="overflow-auto rounded-xl border bg-white">
+        {/* LISTA com linhas expansíveis */}
+        <div className="overflow-hidden rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left">
+                <th className="px-4 py-2 w-8"></th>
                 <th className="px-4 py-2">NF</th>
                 <th className="px-4 py-2">Cedente</th>
                 <th className="px-4 py-2">Sacado</th>
-                <th className="px-4 py-2">Emissão</th>
                 <th className="px-4 py-2">Venc.</th>
                 <th className="px-4 py-2">Dias</th>
                 <th className="px-4 py-2">Valor</th>
                 <th className="px-4 py-2">Taxa (% a.m.)</th>
-                <th className="px-4 py-2">Desconto</th>
                 <th className="px-4 py-2">Líquido</th>
-                <th className="px-4 py-2">A Receber</th>
                 <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Anexos</th>
                 <th className="px-4 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
               {itensFiltrados.length === 0 && (
-                <tr><td colSpan={14} className="px-4 py-6 text-center text-gray-500">Sem registros.</td></tr>
+                <tr><td colSpan={11} className="px-4 py-6 text-center text-gray-500">Sem registros.</td></tr>
               )}
-              {itensFiltrados.map((n) => (
-                <tr key={n.id} className="border-t">
-                  <td className="px-4 py-2">{n.numero}</td>
-                  <td className="px-4 py-2">{n.cedenteNome}</td>
-                  <td className="px-4 py-2">{n.sacadoNome}</td>
-                  <td className="px-4 py-2">{n.emissao}</td>
-                  <td className="px-4 py-2">{n.vencimento}</td>
-                  <td className="px-4 py-2">{n.dias}</td>
-                  <td className="px-4 py-2">{money(n.valor)}</td>
-                  <td className="px-4 py-2">{n.taxaMes.toFixed(2)}%</td>
-                  <td className="px-4 py-2">{money(n.desconto)}</td>
-                  <td className="px-4 py-2">{money(n.liquidoCedente)}</td>
-                  <td className="px-4 py-2">{money(n.valorAReceber)}</td>
-                  <td className="px-4 py-2 capitalize">{n.status}</td>
-                  <td className="px-4 py-2">
-                    {n.anexos.length ? (
-                      <div className="flex flex-wrap gap-2">
-                        {n.anexos.map((a, idx) => (
-                          <a
-                            key={idx}
-                            className="px-2 py-1 border rounded hover:bg-gray-50"
-                            href={a.previewUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            title={a.nome}
-                          >
-                            {a.tipo === 'nota_fiscal' ? 'Nota Fiscal' : a.tipo === 'boleto' ? 'Boleto' : 'Aditivo'}
-                          </a>
-                        ))}
-                      </div>
-                    ) : <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-4 py-2">
-                    <button className="px-2 py-1 border rounded text-red-600" onClick={() => remover(n.id)}>
-                      Excluir
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {itensFiltrados.map((n) => {
+                const aberto = expandidoId === n.id
+                return (
+                  <FragmentRow
+                    key={n.id}
+                    aberto={aberto}
+                    onToggle={() => setExpandidoId(aberto ? null : n.id)}
+                    nota={n}
+                    onRemover={() => remover(n.id)}
+                  />
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -381,26 +378,55 @@ export default function NovaNota() {
               </div>
 
               <div>
-                <label className="block text-sm mb-1">Valor da Nota (R$)</label>
-                <input
+                <label className="block text-sm mb-1">Valor da Nota</label>
+                <InputMoney
                   type="number"
                   step="0.01"
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
                   value={valor}
-                  onChange={(e) => setValor(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e: any) => setValor(e.target.value === '' ? '' : Number(e.target.value))}
                   required
                 />
               </div>
               <div>
                 <label className="block text-sm mb-1">Taxa (% a.m.)</label>
-                <input
+                <InputPercent
                   type="number"
                   step="0.01"
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
                   value={taxaMes}
-                  onChange={(e) => setTaxaMes(e.target.value === '' ? '' : Number(e.target.value))}
+                  onChange={(e: any) => setTaxaMes(e.target.value === '' ? '' : Number(e.target.value))}
                   required
                 />
+              </div>
+
+              {/* Outras taxas */}
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm mb-1">Tarifa bancária</label>
+                  <InputMoney
+                    type="number"
+                    step="0.01"
+                    value={tarifaBancaria}
+                    onChange={(e: any) => setTarifaBancaria(e.target.value === '' ? '' : Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Tarifa de registro</label>
+                  <InputMoney
+                    type="number"
+                    step="0.01"
+                    value={tarifaRegistro}
+                    onChange={(e: any) => setTarifaRegistro(e.target.value === '' ? '' : Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm mb-1">Custos operacionais</label>
+                  <InputMoney
+                    type="number"
+                    step="0.01"
+                    value={custosOperacionais}
+                    onChange={(e: any) => setCustosOperacionais(e.target.value === '' ? '' : Number(e.target.value))}
+                  />
+                </div>
               </div>
 
               {/* métricas */}
@@ -410,16 +436,16 @@ export default function NovaNota() {
                   <div className="text-lg font-medium">{dias}</div>
                 </div>
                 <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Desconto</div>
-                  <div className="text-lg font-medium">{money(calc.desconto || 0)}</div>
+                  <div className="text-xs text-gray-500">Desconto financeiro</div>
+                  <div className="text-lg font-medium">{money(calc.dFinanceiro || 0)}</div>
+                </div>
+                <div className="border rounded-lg p-3 bg-gray-50">
+                  <div className="text-xs text-gray-500">Outras taxas</div>
+                  <div className="text-lg font-medium">{money(calc.extras || 0)}</div>
                 </div>
                 <div className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-xs text-gray-500">Líquido ao Cedente</div>
                   <div className="text-lg font-medium">{money(calc.liquido || 0)}</div>
-                </div>
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Valor a Receber (nominal)</div>
-                  <div className="text-lg font-medium">{money(calc.receber || 0)}</div>
                 </div>
               </div>
 
@@ -445,5 +471,108 @@ export default function NovaNota() {
         )}
       </div>
     </AdminLayout>
+  )
+}
+
+/* ================== Linha da tabela com expansão ================== */
+function FragmentRow({
+  nota,
+  aberto,
+  onToggle,
+  onRemover,
+}: {
+  nota: Nota
+  aberto: boolean
+  onToggle: () => void
+  onRemover: () => void
+}) {
+  return (
+    <>
+      <tr className="border-t hover:bg-gray-50 cursor-pointer" onClick={onToggle}>
+        <td className="px-4 py-2">
+          <span className={`inline-block transition-transform ${aberto ? 'rotate-90' : ''}`}>▶</span>
+        </td>
+        <td className="px-4 py-2">{nota.numero}</td>
+        <td className="px-4 py-2">{nota.cedenteNome}</td>
+        <td className="px-4 py-2">{nota.sacadoNome}</td>
+        <td className="px-4 py-2">{nota.vencimento}</td>
+        <td className="px-4 py-2">{nota.dias}</td>
+        <td className="px-4 py-2">{money(nota.valor)}</td>
+        <td className="px-4 py-2">{nota.taxaMes.toFixed(2)}%</td>
+        <td className="px-4 py-2">{money(nota.liquidoCedente)}</td>
+        <td className="px-4 py-2 capitalize">{nota.status}</td>
+        <td className="px-4 py-2">
+          <button
+            className="px-2 py-1 border rounded text-red-600"
+            onClick={(e) => { e.stopPropagation(); onRemover() }}
+          >
+            Excluir
+          </button>
+        </td>
+      </tr>
+
+      {aberto && (
+        <tr className="bg-gray-50/70">
+          <td colSpan={11} className="px-6 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1">
+                <div className="text-xs text-gray-500">Cedente (CNPJ)</div>
+                <div className="font-medium">{nota.cedenteNome}</div>
+                <div className="text-sm text-gray-600">{nota.cnpjCedente}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-gray-500">Sacado (CNPJ)</div>
+                <div className="font-medium">{nota.sacadoNome}</div>
+                <div className="text-sm text-gray-600">{nota.cnpjSacado}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-xs text-gray-500">Emissão → Vencimento</div>
+                <div className="font-medium">{nota.emissao} → {nota.vencimento} ({nota.dias} dias)</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mt-4">
+              <InfoCard label="Valor" value={money(nota.valor)} />
+              <InfoCard label="Taxa (% a.m.)" value={`${nota.taxaMes.toFixed(2)}%`} />
+              <InfoCard label="Desconto financeiro" value={money(nota.desconto)} />
+              <InfoCard label="Outras taxas" value={money(nota.descontoExtras)} />
+              <InfoCard label="Líquido ao Cedente" value={money(nota.liquidoCedente)} />
+            </div>
+
+            <div className="mt-4">
+              <div className="text-xs text-gray-500 mb-2">Anexos</div>
+              {nota.anexos.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {nota.anexos.map((a, idx) => (
+                    <a
+                      key={idx}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-full border bg-white hover:bg-gray-50"
+                      href={a.previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={a.nome}
+                    >
+                      <span className="opacity-70">📎</span>
+                      {a.tipo === 'nota_fiscal' ? 'Nota Fiscal' : a.tipo === 'boleto' ? 'Boleto' : 'Aditivo'}
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-gray-500 text-sm">— sem anexos —</span>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function InfoCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border rounded-lg p-3 bg-white">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-sm font-medium">{value}</div>
+    </div>
   )
 }
