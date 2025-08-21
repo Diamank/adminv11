@@ -21,26 +21,9 @@ const money = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export default function NovoContrato() {
-  // form
-  const [cedenteId, setCedenteId] = useState('')
-  const [tipo, setTipo] = useState<TipoContrato>('Cessão de crédito - Materiais')
-  const [limite, setLimite] = useState<number | ''>('')
-
-  // store
+  // -------- LISTA --------
   const [itens, setItens] = useState<Contrato[]>([])
-  const cedentesOpts = useMemo(
-    () =>
-      cedentesMock.map((c: any) => ({
-        value: c.id,
-        label: c.razao || c.nome || '—',
-        cnpj: c.cnpj,
-      })),
-    []
-  )
-  const cedenteSel = useMemo(
-    () => cedentesOpts.find((o) => o.value === cedenteId),
-    [cedentesOpts, cedenteId]
-  )
+  const [busca, setBusca] = useState('')
 
   useEffect(() => {
     try {
@@ -58,9 +41,51 @@ export default function NovoContrato() {
     } catch {}
   }
 
+  const remover = (id: string) => {
+    if (!confirm('Excluir contrato?')) return
+    persist(itens.filter((i) => i.id !== id))
+  }
+
+  const itensFiltrados = useMemo(() => {
+    const q = busca.trim().toLowerCase()
+    if (!q) return itens
+    return itens.filter((i) =>
+      [i.cedenteNome, i.cnpjCedente, i.tipo].some((v) =>
+        v.toLowerCase().includes(q)
+      )
+    )
+  }, [itens, busca])
+
+  // -------- FORM (colapsado por padrão) --------
+  const [mostrarForm, setMostrarForm] = useState(false)
+  const [cedenteId, setCedenteId] = useState('')
+  const [tipo, setTipo] = useState<TipoContrato>('Cessão de crédito - Materiais')
+  const [limite, setLimite] = useState<number | ''>('')
+
+  const cedentesOpts = useMemo(
+    () =>
+      cedentesMock.map((c: any) => ({
+        value: c.id,
+        label: c.razao || c.nome || '—',
+        cnpj: c.cnpj,
+      })),
+    []
+  )
+  const cedenteSel = useMemo(
+    () => cedentesOpts.find((o) => o.value === cedenteId),
+    [cedentesOpts, cedenteId]
+  )
+
+  const limparForm = () => {
+    setCedenteId('')
+    setTipo('Cessão de crédito - Materiais')
+    setLimite('')
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (!cedenteId || !limite) return
+    if (!cedenteId || limite === '' || Number(limite) <= 0) return
+
     const novo: Contrato = {
       id: 'CT-' + Date.now(),
       cedenteId,
@@ -71,81 +96,37 @@ export default function NovoContrato() {
       criadoEm: new Date().toISOString().slice(0, 10),
     }
     persist([novo, ...itens])
-    setLimite('')
-    setCedenteId('')
-    setTipo('Cessão de crédito - Materiais')
+    limparForm()
+    setMostrarForm(false)
     alert('Contrato salvo!')
-  }
-
-  const remover = (id: string) => {
-    if (!confirm('Excluir contrato?')) return
-    persist(itens.filter((i) => i.id !== id))
   }
 
   return (
     <AdminLayout>
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-semibold mb-3">Cadastrar Contrato</h1>
+      <div className="max-w-5xl mx-auto space-y-6">
 
-        {/* Formulário */}
-        <form onSubmit={onSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-          <div className="sm:col-span-2">
-            <label className="block text-sm mb-1">Cedente</label>
-            <select
-              className="w-full border rounded-lg px-3 py-2 bg-white"
-              value={cedenteId}
-              onChange={(e) => setCedenteId(e.target.value)}
-              required
-            >
-              <option value="">Selecione…</option>
-              {cedentesOpts.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Header da LISTA + botão de abrir/fechar formulário */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">Contratos</h1>
+          <button
+            onClick={() => setMostrarForm(v => !v)}
+            className="px-4 py-2 rounded-xl bg-black text-white"
+          >
+            {mostrarForm ? 'Fechar' : 'Novo contrato'}
+          </button>
+        </div>
 
-          <div>
-            <label className="block text-sm mb-1">CNPJ do Cedente</label>
-            <input
-              className="w-full border rounded-lg px-3 py-2 bg-gray-50"
-              value={cedenteSel?.cnpj || ''}
-              readOnly
-            />
-          </div>
+        {/* Busca rápida */}
+        <div className="flex gap-3">
+          <input
+            placeholder="Buscar por cedente, CNPJ ou tipo…"
+            className="w-full border rounded-lg px-3 py-2 bg-white"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+        </div>
 
-          <div>
-            <label className="block text-sm mb-1">Tipo de contrato</label>
-            <select
-              className="w-full border rounded-lg px-3 py-2 bg-white"
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value as TipoContrato)}
-            >
-              <option value="Cessão de crédito - Materiais">Cessão de crédito - Materiais</option>
-              <option value="Cessão de crédito - Serviços">Cessão de crédito - Serviços</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm mb-1">Limite (R$)</label>
-            <input
-              type="number"
-              step="0.01"
-              className="w-full border rounded-lg px-3 py-2 bg-white"
-              value={limite}
-              onChange={(e) => setLimite(e.target.value === '' ? '' : Number(e.target.value))}
-              required
-            />
-          </div>
-
-          <div className="sm:col-span-2 pt-2">
-            <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
-          </div>
-        </form>
-
-        {/* Histórico simples */}
-        <h2 className="text-lg font-medium mb-2">Contratos cadastrados</h2>
+        {/* LISTA primeiro */}
         <div className="overflow-auto rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -160,19 +141,26 @@ export default function NovoContrato() {
               </tr>
             </thead>
             <tbody>
-              {itens.length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-500">Sem registros.</td></tr>
+              {itensFiltrados.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
+                    Sem registros.
+                  </td>
+                </tr>
               )}
-              {itens.map((i) => (
+              {itensFiltrados.map((i, idx) => (
                 <tr key={i.id} className="border-t">
-                  <td className="px-4 py-2">{i.id}</td>
+                  <td className="px-4 py-2">{String(idx + 1).padStart(3, '0')}</td>
                   <td className="px-4 py-2">{i.cedenteNome}</td>
                   <td className="px-4 py-2">{i.cnpjCedente}</td>
                   <td className="px-4 py-2">{i.tipo}</td>
                   <td className="px-4 py-2">{money(i.limite)}</td>
                   <td className="px-4 py-2">{i.criadoEm}</td>
                   <td className="px-4 py-2">
-                    <button className="px-2 py-1 border rounded text-red-600" onClick={() => remover(i.id)}>
+                    <button
+                      className="px-2 py-1 border rounded text-red-600"
+                      onClick={() => remover(i.id)}
+                    >
                       Excluir
                     </button>
                   </td>
@@ -181,6 +169,76 @@ export default function NovoContrato() {
             </tbody>
           </table>
         </div>
+
+        {/* FORM: só aparece ao clicar no botão */}
+        {mostrarForm && (
+          <div className="border rounded-xl p-4 bg-white">
+            <h2 className="text-lg font-medium mb-3">Cadastrar contrato</h2>
+
+            <form onSubmit={onSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-sm mb-1">Cedente</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  value={cedenteId}
+                  onChange={(e) => setCedenteId(e.target.value)}
+                  required
+                >
+                  <option value="">Selecione…</option>
+                  {cedentesOpts.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label} — {o.cnpj}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">CNPJ do Cedente</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 bg-gray-50"
+                  value={cedenteSel?.cnpj || ''}
+                  readOnly
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Tipo de contrato</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  value={tipo}
+                  onChange={(e) => setTipo(e.target.value as TipoContrato)}
+                >
+                  <option value="Cessão de crédito - Materiais">Cessão de crédito - Materiais</option>
+                  <option value="Cessão de crédito - Serviços">Cessão de crédito - Serviços</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm mb-1">Limite (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  value={limite}
+                  onChange={(e) => setLimite(e.target.value === '' ? '' : Number(e.target.value))}
+                  required
+                />
+              </div>
+
+              <div className="sm:col-span-2 pt-2 flex gap-3">
+                <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
+                <button
+                  type="button"
+                  onClick={() => { limparForm(); setMostrarForm(false) }}
+                  className="px-4 py-2 rounded-xl border"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </AdminLayout>
   )
