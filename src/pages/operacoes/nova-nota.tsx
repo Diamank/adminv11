@@ -9,39 +9,33 @@ function UploadBox({
   accept,
   file,
   onChange,
+  helper,
 }: {
   label: string
   accept?: string
   file: File | null
   onChange: (f: File | null) => void
+  helper?: string
 }) {
   const inputId = `up-${label.replace(/\W+/g, '').toLowerCase()}`
-
   const onSelect = (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange(e.target.files?.[0] ?? null)
-
   const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const f = e.dataTransfer.files?.[0]
     if (!f) return
     onChange(f)
   }
-
   const human = (n: number) =>
     n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(2)} MB`
 
   return (
     <div className="space-y-2">
       <label htmlFor={inputId} className="block text-sm mb-1">{label}</label>
-
       <div
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
-        className={[
-          "group relative w-full rounded-2xl border-2 border-dashed p-4",
-          "bg-white hover:border-gray-400 transition",
-          "border-gray-300",
-        ].join(" ")}
+        className="group relative w-full rounded-2xl border-2 border-dashed p-4 bg-white hover:border-gray-400 transition border-gray-300"
       >
         {!file ? (
           <label htmlFor={inputId} className="flex cursor-pointer items-center gap-3">
@@ -50,7 +44,9 @@ function UploadBox({
             </svg>
             <div className="flex-1">
               <div className="text-sm font-medium">Arraste e solte o arquivo aqui</div>
-              <div className="text-xs text-gray-500">ou clique para escolher (aceita {accept || 'arquivos'})</div>
+              <div className="text-xs text-gray-500">
+                {helper ?? <>ou clique para escolher (aceita {accept || 'arquivos'})</>}
+              </div>
             </div>
           </label>
         ) : (
@@ -73,7 +69,6 @@ function UploadBox({
             </div>
           </div>
         )}
-
         <input id={inputId} type="file" accept={accept} className="hidden" onChange={onSelect} />
       </div>
     </div>
@@ -122,14 +117,14 @@ function InputMoney(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className="relative">
       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R$</span>
-      <input {...props} className={"w-full border rounded-lg pl-9 pr-3 py-2 bg-white " + (props.className||'')} />
+      <input {...props} className={'w-full border rounded-lg pl-9 pr-3 py-2 bg-white ' + (props.className || '')} />
     </div>
   )
 }
 function InputPercent(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div className="relative">
-      <input {...props} className={"w-full border rounded-lg pl-3 pr-9 py-2 bg-white " + (props.className||'')} />
+      <input {...props} className={'w-full border rounded-lg pl-3 pr-9 py-2 bg-white ' + (props.className || '')} />
       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
     </div>
   )
@@ -141,6 +136,9 @@ export default function NovaNota() {
   const [itens, setItens] = useState<Nota[]>([])
   const [busca, setBusca] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  // EDIÇÃO
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => {
     try {
@@ -162,6 +160,7 @@ export default function NovaNota() {
     alvo?.anexos?.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
     persist(itens.filter((n) => n.id !== id))
     if (expandedId === id) setExpandedId(null)
+    if (editingId === id) cancelarEdicao()
   }
 
   const itensFiltrados = useMemo(() => {
@@ -208,7 +207,7 @@ export default function NovaNota() {
     return { descontoFinanceiro, fix, descontoAdm, descontoIof, descontoTotal, liquido, receber }
   }, [valor, taxaMes, dias, tarifaFixa, taxaAdmPerc, iofPerc])
 
-  // anexos
+  // anexos (novos no form)
   const [nfFile, setNfFile] = useState<File | null>(null)
   const [boletoFile, setBoletoFile] = useState<File | null>(null)
   const [aditivoFile, setAditivoFile] = useState<File | null>(null)
@@ -220,23 +219,94 @@ export default function NovaNota() {
     setNfFile(null); setBoletoFile(null); setAditivoFile(null)
   }
 
+  const iniciarEdicao = (nota: Nota) => {
+    setEditingId(nota.id)
+    setMostrarForm(true)
+    setExpandedId(nota.id)
+
+    setCedenteId(nota.cedenteId)
+    setSacadoId(nota.sacadoId)
+    setNumero(nota.numero)
+    setEmissao(nota.emissao)
+    setVencimento(nota.vencimento)
+    setValor(nota.valor)
+    setTaxaMes(nota.taxaMes)
+    setTarifaFixa(nota.tarifaFixa)
+    setTaxaAdmPerc(nota.taxaAdmPerc)
+    setIofPerc(nota.iofPerc)
+
+    // anexos existentes permanecem até você enviar novos (não populamos File aqui)
+    setNfFile(null); setBoletoFile(null); setAditivoFile(null)
+  }
+
+  const cancelarEdicao = () => {
+    setEditingId(null)
+    limparForm()
+    setMostrarForm(false)
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!cedenteId || !sacadoId || !numero || !emissao || !vencimento || valor === '' || taxaMes === '') return
 
-    const anexos: Anexo[] = []
-    if (nfFile) anexos.push({ tipo: 'nota_fiscal', nome: nfFile.name, tamanho: nfFile.size, previewUrl: URL.createObjectURL(nfFile) })
-    if (boletoFile) anexos.push({ tipo: 'boleto', nome: boletoFile.name, tamanho: boletoFile.size, previewUrl: URL.createObjectURL(boletoFile) })
-    if (aditivoFile) anexos.push({ tipo: 'aditivo', nome: aditivoFile.name, tamanho: aditivoFile.size, previewUrl: URL.createObjectURL(aditivoFile) })
+    // monta anexos novos (se enviados)
+    const novosAnexos: Anexo[] = []
+    if (nfFile) novosAnexos.push({ tipo: 'nota_fiscal', nome: nfFile.name, tamanho: nfFile.size, previewUrl: URL.createObjectURL(nfFile) })
+    if (boletoFile) novosAnexos.push({ tipo: 'boleto', nome: boletoFile.name, tamanho: boletoFile.size, previewUrl: URL.createObjectURL(boletoFile) })
+    if (aditivoFile) novosAnexos.push({ tipo: 'aditivo', nome: aditivoFile.name, tamanho: aditivoFile.size, previewUrl: URL.createObjectURL(aditivoFile) })
 
+    if (editingId) {
+      // ATUALIZAR
+      persist(itens.map(n => {
+        if (n.id !== editingId) return n
+        // se anexos novos foram enviados, substituímos apenas os tipos correspondentes
+        let anexosAtualizados = [...n.anexos]
+        for (const a of novosAnexos) {
+          const idx = anexosAtualizados.findIndex(x => x.tipo === a.tipo)
+          if (idx >= 0) {
+            if (anexosAtualizados[idx].previewUrl) URL.revokeObjectURL(anexosAtualizados[idx].previewUrl!)
+            anexosAtualizados[idx] = a
+          } else {
+            anexosAtualizados.push(a)
+          }
+        }
+        return {
+          ...n,
+          cedenteId,
+          cedenteNome: (cedentesMock.find(c => c.id === cedenteId) as any)?.razao || (cedentesMock.find(c => c.id === cedenteId) as any)?.nome || '',
+          cnpjCedente: (cedentesMock.find(c => c.id === cedenteId) as any)?.cnpj || '',
+          sacadoId,
+          sacadoNome: (sacadosMock.find(s => s.id === sacadoId) as any)?.razao || (sacadosMock.find(s => s.id === sacadoId) as any)?.nome || '',
+          cnpjSacado: (sacadosMock.find(s => s.id === sacadoId) as any)?.cnpj || '',
+          numero,
+          emissao, vencimento,
+          dias,
+          valor: Number(valor),
+          taxaMes: Number(taxaMes),
+          tarifaFixa: Number(tarifaFixa || 0),
+          taxaAdmPerc: Number(taxaAdmPerc || 0),
+          iofPerc: Number(iofPerc || 0),
+          desconto: calc.descontoTotal,
+          liquidoCedente: calc.liquido,
+          valorAReceber: calc.receber,
+          anexos: anexosAtualizados,
+        }
+      }))
+      cancelarEdicao()
+      setExpandedId(editingId)
+      alert('Nota atualizada!')
+      return
+    }
+
+    // NOVO
     const novo: Nota = {
       id: 'NF-' + Date.now(),
       cedenteId,
-      cedenteNome: (cedente as any)?.razao || (cedente as any)?.nome || '',
-      cnpjCedente: cedente?.cnpj || '',
+      cedenteNome: (cedentesMock.find(c => c.id === cedenteId) as any)?.razao || (cedentesMock.find(c => c.id === cedenteId) as any)?.nome || '',
+      cnpjCedente: (cedentesMock.find(c => c.id === cedenteId) as any)?.cnpj || '',
       sacadoId,
-      sacadoNome: (sacado as any)?.razao || (sacado as any)?.nome || '',
-      cnpjSacado: sacado?.cnpj || '',
+      sacadoNome: (sacadosMock.find(s => s.id === sacadoId) as any)?.razao || (sacadosMock.find(s => s.id === sacadoId) as any)?.nome || '',
+      cnpjSacado: (sacadosMock.find(s => s.id === sacadoId) as any)?.cnpj || '',
       numero,
       emissao, vencimento,
       dias,
@@ -248,13 +318,13 @@ export default function NovaNota() {
       desconto: calc.descontoTotal,
       liquidoCedente: calc.liquido,
       valorAReceber: calc.receber,
-      anexos,
+      anexos: novosAnexos,
       status: 'pendente',
     }
     persist([novo, ...itens])
     limparForm()
     setMostrarForm(false)
-    setExpandedId(novo.id) // já abre os detalhes após salvar
+    setExpandedId(novo.id)
     alert('Nota salva!')
   }
 
@@ -265,10 +335,10 @@ export default function NovaNota() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Notas</h1>
           <button
-            onClick={() => setMostrarForm((v) => !v)}
+            onClick={() => { setMostrarForm(v => !v); if (!v) cancelarEdicao() }}
             className="px-4 py-2 rounded-xl bg-black text-white"
           >
-            {mostrarForm ? 'Fechar' : 'Nova nota'}
+            {mostrarForm ? 'Fechar' : (editingId ? 'Fechar' : 'Nova nota')}
           </button>
         </div>
 
@@ -316,11 +386,11 @@ export default function NovaNota() {
                   <>
                     <tr
                       key={n.id}
-                      className={"border-t cursor-pointer hover:bg-gray-50 " + (open ? "bg-gray-50" : "")}
+                      className={'border-t cursor-pointer hover:bg-gray-50 ' + (open ? 'bg-gray-50' : '')}
                       onClick={() => setExpandedId(open ? null : n.id)}
                     >
                       <td className="px-4 py-2">
-                        <span className={"inline-block transition-transform " + (open ? "rotate-90" : "")}>▶</span>
+                        <span className={'inline-block transition-transform ' + (open ? 'rotate-90' : '')}>▶</span>
                       </td>
                       <td className="px-4 py-2">{n.numero}</td>
                       <td className="px-4 py-2">{n.cedenteNome}</td>
@@ -335,12 +405,20 @@ export default function NovaNota() {
                       <td className="px-4 py-2">{money(n.valorAReceber)}</td>
                       <td className="px-4 py-2 capitalize">{n.status}</td>
                       <td className="px-4 py-2">
-                        <button
-                          className="px-2 py-1 border rounded text-red-600"
-                          onClick={(e) => { e.stopPropagation(); remover(n.id) }}
-                        >
-                          Excluir
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            className="px-2 py-1 border rounded"
+                            onClick={(e) => { e.stopPropagation(); iniciarEdicao(n) }}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="px-2 py-1 border rounded text-red-600"
+                            onClick={(e) => { e.stopPropagation(); remover(n.id) }}
+                          >
+                            Excluir
+                          </button>
+                        </div>
                       </td>
                     </tr>
 
@@ -407,7 +485,16 @@ export default function NovaNota() {
         {/* FORM */}
         {mostrarForm && (
           <div className="border rounded-xl p-4 bg-white">
-            <h2 className="text-lg font-medium mb-3">Cadastrar Nota (Antecipação)</h2>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-medium">
+                {editingId ? 'Editar Nota' : 'Cadastrar Nota (Antecipação)'}
+              </h2>
+              {editingId && (
+                <button type="button" onClick={cancelarEdicao} className="px-3 py-1.5 text-sm rounded-lg border">
+                  Cancelar edição
+                </button>
+              )}
+            </div>
 
             <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
@@ -468,57 +555,35 @@ export default function NovaNota() {
 
               <div>
                 <label className="block text-sm mb-1">Valor da Nota</label>
-                <InputMoney
-                  inputMode="decimal"
-                  step="0.01"
-                  value={String(valor)}
+                <InputMoney inputMode="decimal" step="0.01" value={String(valor)}
                   onChange={(e) => setValor(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00"
-                  required
-                />
+                  placeholder="0,00" required />
               </div>
               <div>
                 <label className="block text-sm mb-1">Taxa financeira (% a.m.)</label>
-                <InputPercent
-                  inputMode="decimal"
-                  step="0.01"
-                  value={String(taxaMes)}
+                <InputPercent inputMode="decimal" step="0.01" value={String(taxaMes)}
                   onChange={(e) => setTaxaMes(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="Ex.: 3,5"
-                  required
-                />
+                  placeholder="Ex.: 3,5" required />
               </div>
 
               {/* Outras taxas */}
               <div>
                 <label className="block text-sm mb-1">Tarifa fixa</label>
-                <InputMoney
-                  inputMode="decimal"
-                  step="0.01"
-                  value={String(tarifaFixa)}
+                <InputMoney inputMode="decimal" step="0.01" value={String(tarifaFixa)}
                   onChange={(e) => setTarifaFixa(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00"
-                />
+                  placeholder="0,00" />
               </div>
               <div>
                 <label className="block text-sm mb-1">Taxa administrativa (% sobre o valor)</label>
-                <InputPercent
-                  inputMode="decimal"
-                  step="0.01"
-                  value={String(taxaAdmPerc)}
+                <InputPercent inputMode="decimal" step="0.01" value={String(taxaAdmPerc)}
                   onChange={(e) => setTaxaAdmPerc(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00"
-                />
+                  placeholder="0,00" />
               </div>
               <div>
                 <label className="block text-sm mb-1">IOF (% sobre o valor)</label>
-                <InputPercent
-                  inputMode="decimal"
-                  step="0.01"
-                  value={String(iofPerc)}
+                <InputPercent inputMode="decimal" step="0.01" value={String(iofPerc)}
                   onChange={(e) => setIofPerc(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00"
-                />
+                  placeholder="0,00" />
               </div>
 
               {/* métricas */}
@@ -529,11 +594,15 @@ export default function NovaNota() {
                 </div>
                 <div className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-xs text-gray-500">Desconto financeiro</div>
-                  <div className="text-lg font-medium">{money((typeof valor==='number'?valor:0) * ((typeof taxaMes==='number'?taxaMes:0)/100) * (dias/30))}</div>
+                  <div className="text-lg font-medium">
+                    {money((typeof valor==='number'?valor:0) * ((typeof taxaMes==='number'?taxaMes:0)/100) * (dias/30))}
+                  </div>
                 </div>
                 <div className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-xs text-gray-500">Outras taxas</div>
-                  <div className="text-lg font-medium">{money((typeof tarifaFixa==='number'?tarifaFixa:0) + (typeof valor==='number'?valor:0) * ((typeof taxaAdmPerc==='number'?taxaAdmPerc:0)/100 + (typeof iofPerc==='number'?iofPerc:0)/100))}</div>
+                  <div className="text-lg font-medium">
+                    {money((typeof tarifaFixa==='number'?tarifaFixa:0) + (typeof valor==='number'?valor:0) * ((typeof taxaAdmPerc==='number'?taxaAdmPerc:0)/100 + (typeof iofPerc==='number'?iofPerc:0)/100))}
+                  </div>
                 </div>
                 <div className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-xs text-gray-500">Desconto total</div>
@@ -547,16 +616,21 @@ export default function NovaNota() {
 
               {/* anexos (bonitos) */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <UploadBox label="Anexo — Nota Fiscal" accept=".pdf,image/*" file={nfFile} onChange={setNfFile} />
-                <UploadBox label="Anexo — Boleto" accept=".pdf,image/*" file={boletoFile} onChange={setBoletoFile} />
-                <UploadBox label="Anexo — Aditivo" accept=".pdf,image/*" file={aditivoFile} onChange={setAditivoFile} />
+                <UploadBox label="Anexo — Nota Fiscal" accept=".pdf,image/*" file={nfFile} onChange={setNfFile}
+                  helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
+                <UploadBox label="Anexo — Boleto" accept=".pdf,image/*" file={boletoFile} onChange={setBoletoFile}
+                  helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
+                <UploadBox label="Anexo — Aditivo" accept=".pdf,image/*" file={aditivoFile} onChange={setAditivoFile}
+                  helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
               </div>
 
               <div className="md:col-span-2 pt-2 flex gap-3">
-                <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
+                <button className="px-4 py-2 rounded-xl bg-black text-white">
+                  {editingId ? 'Atualizar' : 'Salvar'}
+                </button>
                 <button
                   type="button"
-                  onClick={() => { limparForm(); setMostrarForm(false) }}
+                  onClick={() => { editingId ? cancelarEdicao() : (limparForm(), setMostrarForm(false)) }}
                   className="px-4 py-2 rounded-xl border"
                 >
                   Cancelar
