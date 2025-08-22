@@ -1,23 +1,32 @@
+// src/pages/cedentes/novo.tsx
 import AdminLayout from '@/components/AdminLayout'
 import { useState } from 'react'
 
-type Risco = 'sem_risco' | 'moderado' | 'risco' // baixo, médio, alto
+type Risco = 'sem_risco' | 'moderado' | 'risco'
 
-export default function NovoSacado() {
+export default function NovoCedente() {
   const [form, setForm] = useState({
-    cnpj: '',            // ou cpf (mantenha ambos se preferir)
-    razao: '',           // ou nome
+    cnpj: '',
+    razao: '',
+    fantasia: '',
+    email: '',
+    telefone: '',
     endereco: '',
-    contato: '',         // email/telefone
+    conta_bancaria: '',
   })
   const [risco, setRisco] = useState<Risco>('sem_risco')
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Salvar no backend: supabase.from('sacados').insert({ ...form, risco })
-    alert(`Sacado salvo (mock):
-Doc: ${form.cnpj}
-Nome/Razão: ${form.razao}
+    // 👉 depois integramos com supabase:
+    // await supabase.from('cedentes').insert([{ ...form, risco }])
+    alert(`Cedente salvo (mock):
+CNPJ: ${form.cnpj}
+Razão: ${form.razao}
+Fantasia: ${form.fantasia}
+E-mail: ${form.email}
+Telefone: ${form.telefone}
+Conta: ${form.conta_bancaria}
 Risco: ${risco}`)
   }
 
@@ -25,7 +34,7 @@ Risco: ${risco}`)
     <AdminLayout>
       <form className="max-w-xl space-y-3" onSubmit={onSubmit}>
         <div>
-          <label className="block text-sm mb-1">CNPJ/CPF</label>
+          <label className="block text-sm mb-1">CNPJ</label>
           <input
             className="w-full border rounded-lg px-3 py-2"
             value={form.cnpj}
@@ -35,12 +44,40 @@ Risco: ${risco}`)
         </div>
 
         <div>
-          <label className="block text-sm mb-1">Razão Social / Nome</label>
+          <label className="block text-sm mb-1">Razão Social</label>
           <input
             className="w-full border rounded-lg px-3 py-2"
             value={form.razao}
             onChange={e => setForm({ ...form, razao: e.target.value })}
             required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Nome Fantasia</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.fantasia}
+            onChange={e => setForm({ ...form, fantasia: e.target.value })}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">E-mail</label>
+          <input
+            type="email"
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.email}
+            onChange={e => setForm({ ...form, email: e.target.value })}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Telefone</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.telefone}
+            onChange={e => setForm({ ...form, telefone: e.target.value })}
           />
         </div>
 
@@ -54,11 +91,11 @@ Risco: ${risco}`)
         </div>
 
         <div>
-          <label className="block text-sm mb-1">Contato (email/telefone)</label>
+          <label className="block text-sm mb-1">Conta Bancária</label>
           <input
             className="w-full border rounded-lg px-3 py-2"
-            value={form.contato}
-            onChange={e => setForm({ ...form, contato: e.target.value })}
+            value={form.conta_bancaria}
+            onChange={e => setForm({ ...form, conta_bancaria: e.target.value })}
           />
         </div>
 
