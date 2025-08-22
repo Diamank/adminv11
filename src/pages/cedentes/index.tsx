@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Search } from "lucide-react";
 
 interface Cedente {
   id: number;
@@ -15,38 +14,58 @@ interface Cedente {
   created_at: string;
 }
 
-export default function CedentesPage() {
+export default function Cedentes() {
   const [cedentes, setCedentes] = useState<Cedente[]>([]);
   const [search, setSearch] = useState("");
 
-  async function carregarCedentes() {
-    let query = supabase.from("cedentes").select("*").order("created_at", { ascending: false });
+  useEffect(() => {
+    fetchCedentes();
+  }, []);
 
-    if (search.trim() !== "") {
-      query = query.ilike("razao_social", `%${search}%`);
-    }
+  async function fetchCedentes() {
+    const { data, error } = await supabase
+      .from("cedentes")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-    const { data, error } = await query;
     if (error) {
-      console.error("Erro ao buscar cedentes:", error);
+      console.error(error);
     } else {
-      setCedentes(data || []);
+      setCedentes(data as Cedente[]);
     }
   }
 
-  useEffect(() => {
-    carregarCedentes();
-  }, [search]);
+  const filteredCedentes = cedentes.filter(
+    (c) =>
+      c.razao_social.toLowerCase().includes(search.toLowerCase()) ||
+      c.nome_fantasia.toLowerCase().includes(search.toLowerCase()) ||
+      c.cnpj.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-semibold">Cedentes</h1>
-        <div className="flex items-center gap-2 border rounded px-2 py-1">
-          <Search className="w-4 h-4 text-gray-500" />
+      <h1 className="text-xl font-bold mb-4">Cedentes</h1>
+
+      {/* Campo de busca igual sacados */}
+      <div className="flex justify-end mb-4">
+        <div className="flex items-center border rounded-lg px-3 py-1">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-4 w-4 text-gray-500 mr-1"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1110.5 3a7.5 7.5 0 016.15 13.65z"
+            />
+          </svg>
           <input
             type="text"
-            placeholder="Buscar cedente..."
+            placeholder="Buscar"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="outline-none text-sm"
@@ -54,52 +73,47 @@ export default function CedentesPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 shadow">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 text-gray-700">
+      {/* Tabela de Cedentes */}
+      <div className="overflow-x-auto">
+        <table className="min-w-full border border-gray-200 rounded-lg">
+          <thead className="bg-gray-100">
             <tr>
-              <th className="px-4 py-2">Razão Social</th>
-              <th className="px-4 py-2">CNPJ</th>
-              <th className="px-4 py-2">Email</th>
-              <th className="px-4 py-2">Telefone</th>
-              <th className="px-4 py-2">Endereço</th>
-              <th className="px-4 py-2">Conta</th>
-              <th className="px-4 py-2">Risco</th>
-              <th className="px-4 py-2">Criado</th>
-              <th className="px-4 py-2 text-right">Ações</th>
+              <th className="px-4 py-2 text-left">CNPJ</th>
+              <th className="px-4 py-2 text-left">Razão Social</th>
+              <th className="px-4 py-2 text-left">Nome Fantasia</th>
+              <th className="px-4 py-2 text-left">Email</th>
+              <th className="px-4 py-2 text-left">Telefone</th>
+              <th className="px-4 py-2 text-left">Endereço</th>
+              <th className="px-4 py-2 text-left">Conta</th>
+              <th className="px-4 py-2 text-left">Risco</th>
+              <th className="px-4 py-2 text-left">Criado</th>
+              <th className="px-4 py-2 text-left">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {cedentes.length > 0 ? (
-              cedentes.map((c) => (
-                <tr key={c.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2">{c.razao_social}</td>
-                  <td className="px-4 py-2">{c.cnpj}</td>
-                  <td className="px-4 py-2">{c.email}</td>
-                  <td className="px-4 py-2">{c.telefone}</td>
-                  <td className="px-4 py-2">{c.endereco}</td>
-                  <td className="px-4 py-2">{c.conta_bancaria}</td>
+            {filteredCedentes.length > 0 ? (
+              filteredCedentes.map((cedente) => (
+                <tr key={cedente.id} className="border-t">
+                  <td className="px-4 py-2">{cedente.cnpj}</td>
+                  <td className="px-4 py-2">{cedente.razao_social}</td>
+                  <td className="px-4 py-2">{cedente.nome_fantasia}</td>
+                  <td className="px-4 py-2">{cedente.email}</td>
+                  <td className="px-4 py-2">{cedente.telefone}</td>
+                  <td className="px-4 py-2">{cedente.endereco}</td>
+                  <td className="px-4 py-2">{cedente.conta_bancaria}</td>
+                  <td className="px-4 py-2 capitalize">{cedente.risco}</td>
                   <td className="px-4 py-2">
-                    <span
-                      className={`inline-block w-3 h-3 rounded-full ${
-                        c.risco === "sem_risco"
-                          ? "bg-green-500"
-                          : c.risco === "moderado"
-                          ? "bg-yellow-500"
-                          : "bg-red-500"
-                      }`}
-                    />
+                    {new Date(cedente.created_at).toLocaleDateString()}
                   </td>
-                  <td className="px-4 py-2">{new Date(c.created_at).toLocaleDateString()}</td>
-                  <td className="px-4 py-2 text-right">
-                    <button className="text-blue-600 hover:underline">Editar</button>
+                  <td className="px-4 py-2 text-blue-600 cursor-pointer">
+                    Editar
                   </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={9} className="px-4 py-4 text-center text-gray-500">
-                  Nenhum cedente encontrado.
+                <td className="px-4 py-2 text-center" colSpan={10}>
+                  Nenhum cedente encontrado
                 </td>
               </tr>
             )}
