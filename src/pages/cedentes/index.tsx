@@ -1,184 +1,148 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
-import { useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
+import Table from '@/components/Table'
+import Link from 'next/link'
+import RiskBadge from '@/components/RiskBadge'
+import { supabase } from '@/lib/supabase'
 
+type Cedente = {
+  id: string
+  razao_social: string
+  nome_fantasia?: string
+  cnpj: string
+  email?: string
+  telefone?: string
+  endereco?: string
+  risco: 'sem_risco' | 'moderado' | 'risco'
+  created_at: string
+  conta_bancaria?: string
+}
 
-type Risco = 'sem_risco' | 'moderado' | 'risco'
+// Utils
+function normalize(str: string = '') {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+function onlyDigits(str: string = '') {
+  return str.replace(/\D/g, '')
+}
 
-export default function NovoCedente() {
-  const [form, setForm] = useState({
-    cnpj: '',
-    razao_social: '',
-    nome_fantasia: '',
-    email: '',
-    telefone: '',
-    endereco: '',
-    conta_bancaria: '',
-  })
-  const [risco, setRisco] = useState<Risco>('sem_risco')
+// Ícone lupa
+function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+  )
+}
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+export default function Cedentes() {
+  const [query, setQuery] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [data, setData] = useState<Cedente[]>([])
 
-    const { error } = await supabase.from('cedentes').insert([
-      {
-        ...form,
-        risco,
-      },
-    ])
-
-    if (error) {
-      console.error(error)
-      alert('❌ Erro ao salvar cedente!')
-    } else {
-      alert('✅ Cedente salvo com sucesso!')
-      setForm({
-        cnpj: '',
-        razao_social: '',
-        nome_fantasia: '',
-        email: '',
-        telefone: '',
-        endereco: '',
-        conta_bancaria: '',
-      })
-      setRisco('sem_risco')
+  // Buscar cedentes no Supabase
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data, error } = await supabase
+        .from('cedentes')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) console.error(error)
+      else setData(data || [])
     }
-  }
+    fetchData()
+  }, [])
+
+  useEffect(() => {
+    if (showSearch) inputRef.current?.focus()
+  }, [showSearch])
+
+  // Filtro local (igual ao sacado)
+  const filtered = useMemo(() => {
+    const q = query.trim()
+    if (!q) return data
+    const hasNumber = /\d/.test(q)
+
+    return data.filter((c) => {
+      const name = c.razao_social || c.nome_fantasia || ''
+      const nameMatch = normalize(name).includes(normalize(q))
+      const doc = onlyDigits(c.cnpj || '')
+      const docMatch = doc.includes(onlyDigits(q))
+      return hasNumber ? docMatch || nameMatch : nameMatch
+    })
+  }, [query, data])
+
+  const headers = ['Nome/Razão', 'Documento', 'Endereço', 'Contato', 'Risco', 'Criado', 'Ações']
+  const rows = filtered.map((c) => [
+    c.razao_social || c.nome_fantasia || '—',
+    c.cnpj,
+    c.endereco || '—',
+    c.email || c.telefone || '—',
+    <span key={`risk-${c.id}`} title={c.risco}>
+      <RiskBadge level={c.risco as any} />
+    </span>,
+    new Date(c.created_at).toLocaleDateString('pt-BR'),
+    <Link key={c.id} className="text-blue-600" href={`/cedentes/novo?edit=${c.id}`}>
+      Editar
+    </Link>,
+  ])
 
   return (
     <AdminLayout>
-      <form className="max-w-xl space-y-3" onSubmit={onSubmit}>
-        <div>
-          <label className="block text-sm mb-1">CNPJ</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.cnpj}
-            onChange={e => setForm({ ...form, cnpj: e.target.value })}
-            required
-          />
-        </div>
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-3 gap-3">
+          <Link href="/cedentes/novo" className="px-3 py-2 rounded-lg border bg-white">
+            + Novo cedente
+          </Link>
 
-        <div>
-          <label className="block text-sm mb-1">Razão Social</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.razao_social}
-            onChange={e => setForm({ ...form, razao_social: e.target.value })}
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Nome Fantasia</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.nome_fantasia}
-            onChange={e => setForm({ ...form, nome_fantasia: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">E-mail</label>
-          <input
-            type="email"
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.email}
-            onChange={e => setForm({ ...form, email: e.target.value })}
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Telefone</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.telefone}
-            onChange={e => setForm({ ...form, telefone: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Endereço</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.endereco}
-            onChange={e => setForm({ ...form, endereco: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1">Conta Bancária</label>
-          <input
-            className="w-full border rounded-lg px-3 py-2"
-            value={form.conta_bancaria}
-            onChange={e => setForm({ ...form, conta_bancaria: e.target.value })}
-          />
-        </div>
-
-        {/* Seleção de risco */}
-        <div className="pt-1">
-          <label className="block text-sm mb-2">Risco</label>
-          <div className="flex items-center gap-6">
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="risco"
-                value="sem_risco"
-                checked={risco === 'sem_risco'}
-                onChange={() => setRisco('sem_risco')}
-                className="h-4 w-4"
-              />
-              <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
-                <span className="text-sm text-gray-700">Sem risco</span>
-              </span>
-            </label>
-
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="risco"
-                value="moderado"
-                checked={risco === 'moderado'}
-                onChange={() => setRisco('moderado')}
-                className="h-4 w-4"
-              />
-              <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                <span className="text-sm text-gray-700">Risco moderado</span>
-              </span>
-            </label>
-
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="risco"
-                value="risco"
-                checked={risco === 'risco'}
-                onChange={() => setRisco('risco')}
-                className="h-4 w-4"
-              />
-              <span className="inline-flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                <span className="text-sm text-gray-700">Risco</span>
-              </span>
-            </label>
+          <div className="flex items-center gap-2">
+            {!showSearch ? (
+              <button
+                type="button"
+                onClick={() => setShowSearch(true)}
+                className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-sm hover:bg-gray-50"
+                title="Buscar cedente"
+              >
+                <SearchIcon className="h-4 w-4 text-gray-600" />
+                Buscar
+              </button>
+            ) : (
+              <div className="relative w-[min(100%,26rem)]">
+                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Buscar por CNPJ ou Nome..."
+                  className="w-full rounded-xl border bg-white pl-9 pr-9 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    aria-label="Limpar"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="pt-2 flex items-center gap-2">
-          <button type="submit" className="px-4 py-2 rounded-xl bg-black text-white">
-            Salvar
-          </button>
-          <button
-            type="button"
-            className="px-3 py-2 rounded-lg border bg-white text-gray-400 cursor-not-allowed"
-            disabled
-          >
-            Anexar documentos (em breve)
-          </button>
+        <div className="text-xs text-gray-500 mb-2">
+          {filtered.length} {filtered.length === 1 ? 'cedente' : 'cedentes'} encontrados
         </div>
-      </form>
+
+        <Table
+          headers={headers}
+          rows={rows}
+          emptyText={query ? 'Nenhum cedente encontrado para sua busca.' : 'Sem dados'}
+        />
+      </div>
     </AdminLayout>
   )
 }
