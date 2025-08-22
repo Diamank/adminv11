@@ -6,6 +6,9 @@ type Cedente = {
   id: number
   cnpj: string
   razao_social: string
+  nome_fantasia: string
+  email: string
+  telefone: string
   endereco: string
   conta_bancaria: string
   risco: string
@@ -17,36 +20,59 @@ export default function CedentesPage() {
   const [form, setForm] = useState({
     cnpj: '',
     razao_social: '',
+    nome_fantasia: '',
+    email: '',
+    telefone: '',
     endereco: '',
     conta_bancaria: '',
   })
   const [risco, setRisco] = useState<Risco>('sem_risco')
   const [cedentes, setCedentes] = useState<Cedente[]>([])
 
-  // 🔹 carregar cedentes ao abrir
   useEffect(() => {
     carregarCedentes()
   }, [])
 
   const carregarCedentes = async () => {
     const { data, error } = await supabase.from('cedentes').select('*').order('id', { ascending: false })
-    if (error) {
-      console.error('Erro ao carregar cedentes:', error)
-    } else {
-      setCedentes(data || [])
-    }
+    if (!error) setCedentes(data || [])
   }
 
-  // 🔹 salvar novo cedente
+  const formatCNPJ = (value: string) => {
+    return value
+      .replace(/\D/g, '')
+      .replace(/^(\d{2})(\d)/, '$1.$2')
+      .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+      .replace(/\.(\d{3})(\d)/, '.$1/$2')
+      .replace(/(\d{4})(\d)/, '$1-$2')
+      .slice(0, 18)
+  }
+
+  const formatPhone = (value: string) => {
+    return value
+      .replace(/\D/g, '')
+      .replace(/^(\d{2})(\d)/, '($1) $2')
+      .replace(/(\d{5})(\d)/, '$1-$2')
+      .slice(0, 15)
+  }
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const { error } = await supabase.from('cedentes').insert([{ ...form, risco }])
-    if (error) {
-      alert('Erro: ' + error.message)
-    } else {
-      setForm({ cnpj: '', razao_social: '', endereco: '', conta_bancaria: '' })
+    if (!error) {
+      setForm({
+        cnpj: '',
+        razao_social: '',
+        nome_fantasia: '',
+        email: '',
+        telefone: '',
+        endereco: '',
+        conta_bancaria: '',
+      })
       setRisco('sem_risco')
       carregarCedentes()
+    } else {
+      alert('Erro: ' + error.message)
     }
   }
 
@@ -54,18 +80,19 @@ export default function CedentesPage() {
     <AdminLayout>
       <h1 className="text-2xl font-bold mb-4">Gerenciar Cedentes</h1>
 
-      {/* FORM CADASTRO */}
       <form className="max-w-xl space-y-3 mb-10" onSubmit={onSubmit}>
+        {/* CNPJ */}
         <div>
           <label className="block text-sm mb-1">CNPJ</label>
           <input
             className="w-full border rounded-lg px-3 py-2"
             value={form.cnpj}
-            onChange={e => setForm({ ...form, cnpj: e.target.value })}
+            onChange={e => setForm({ ...form, cnpj: formatCNPJ(e.target.value) })}
             required
           />
         </div>
 
+        {/* Razão Social */}
         <div>
           <label className="block text-sm mb-1">Razão Social</label>
           <input
@@ -76,6 +103,38 @@ export default function CedentesPage() {
           />
         </div>
 
+        {/* Nome Fantasia */}
+        <div>
+          <label className="block text-sm mb-1">Nome Fantasia</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.nome_fantasia}
+            onChange={e => setForm({ ...form, nome_fantasia: e.target.value })}
+          />
+        </div>
+
+        {/* Email */}
+        <div>
+          <label className="block text-sm mb-1">Email</label>
+          <input
+            type="email"
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.email}
+            onChange={e => setForm({ ...form, email: e.target.value })}
+          />
+        </div>
+
+        {/* Telefone */}
+        <div>
+          <label className="block text-sm mb-1">Telefone</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.telefone}
+            onChange={e => setForm({ ...form, telefone: formatPhone(e.target.value) })}
+          />
+        </div>
+
+        {/* Endereço */}
         <div>
           <label className="block text-sm mb-1">Endereço</label>
           <input
@@ -85,6 +144,7 @@ export default function CedentesPage() {
           />
         </div>
 
+        {/* Conta bancária */}
         <div>
           <label className="block text-sm mb-1">Conta bancária</label>
           <input
@@ -94,7 +154,7 @@ export default function CedentesPage() {
           />
         </div>
 
-        {/* ⬇️ Seleção de risco */}
+        {/* Risco */}
         <div className="pt-1">
           <label className="block text-sm mb-2">Risco</label>
           <div className="flex items-center gap-6">
@@ -150,7 +210,7 @@ export default function CedentesPage() {
         </div>
       </form>
 
-      {/* LISTAGEM */}
+      {/* LISTA */}
       <h2 className="text-xl font-semibold mb-3">Cedentes cadastrados</h2>
       {cedentes.length === 0 ? (
         <p className="text-gray-500">Nenhum cedente cadastrado.</p>
@@ -160,6 +220,9 @@ export default function CedentesPage() {
             <tr className="bg-gray-100">
               <th className="px-3 py-2 border">CNPJ</th>
               <th className="px-3 py-2 border">Razão Social</th>
+              <th className="px-3 py-2 border">Nome Fantasia</th>
+              <th className="px-3 py-2 border">Email</th>
+              <th className="px-3 py-2 border">Telefone</th>
               <th className="px-3 py-2 border">Endereço</th>
               <th className="px-3 py-2 border">Conta</th>
               <th className="px-3 py-2 border">Risco</th>
@@ -170,6 +233,9 @@ export default function CedentesPage() {
               <tr key={c.id}>
                 <td className="px-3 py-2 border">{c.cnpj}</td>
                 <td className="px-3 py-2 border">{c.razao_social}</td>
+                <td className="px-3 py-2 border">{c.nome_fantasia}</td>
+                <td className="px-3 py-2 border">{c.email}</td>
+                <td className="px-3 py-2 border">{c.telefone}</td>
                 <td className="px-3 py-2 border">{c.endereco}</td>
                 <td className="px-3 py-2 border">{c.conta_bancaria}</td>
                 <td className="px-3 py-2 border">{c.risco}</td>
