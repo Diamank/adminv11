@@ -14,7 +14,7 @@
     "tailwindcss": "^3.4.0",
     "autoprefixer": "^10.4.0",
     "postcss": "^8.4.0",
-    "@supabase/supabase-js": "^2.45.4"   // ⬅️ adicionado aqui
+    "@supabase/supabase-js": "^2.45.4"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
