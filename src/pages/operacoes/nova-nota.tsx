@@ -59,7 +59,11 @@ function UploadBox({
               <label htmlFor={inputId} className="px-3 py-1.5 text-sm rounded-lg border cursor-pointer hover:bg-gray-50">
                 Trocar
               </label>
-              <button type="button" onClick={() => onChange(null)} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50">
+              <button
+                type="button"
+                onClick={() => onChange(null)}
+                className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50"
+              >
                 Remover
               </button>
             </div>
@@ -96,7 +100,6 @@ type Nota = {
   liquidoCedente: number
   valorAReceber: number
   anexos: Anexo[]
-  status: 'pendente' | 'pago' | 'cancelado'
 }
 
 const LS_KEY = 'ops_notas_v3'
@@ -194,7 +197,6 @@ export default function NovaNota() {
     const iof = typeof iofPerc === 'number' ? iofPerc : 0
 
     const descontoFinanceiro = v * (t / 100) * (dias / 30)
-    the_d: null
     const descontoAdm = v * (adm / 100)
     const descontoIof = v * (iof / 100)
     const descontoTotal = descontoFinanceiro + fix + descontoAdm + descontoIof
@@ -312,7 +314,6 @@ export default function NovaNota() {
       liquidoCedente: calc.liquido,
       valorAReceber: calc.receber,
       anexos: novosAnexos,
-      status: 'pendente',
     }
     persist([novo, ...itens])
     limparForm()
@@ -344,23 +345,25 @@ export default function NovaNota() {
         {/* Busca */}
         <div className="flex gap-3">
           <input
-            placeholder="Buscar por cedente, sacado ou CNPJ…"
+            placeholder="Buscar por NF, cedente, sacado ou CNPJ…"
             className="w-full border rounded-lg px-3 py-2 bg-white"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
           />
         </div>
 
-        {/* LISTA: apenas Cedente, Sacado, Emissão, Venc., Desconto e A Receber */}
+        {/* LISTA (Resumo enxuto) */}
         <div className="overflow-hidden rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left">
                 <th className="px-4 py-2 w-10"></th>
+                <th className="px-4 py-2">NF</th>
                 <th className="px-4 py-2">Cedente</th>
                 <th className="px-4 py-2">Sacado</th>
                 <th className="px-4 py-2">Emissão</th>
                 <th className="px-4 py-2">Venc.</th>
+                <th className="px-4 py-2">Taxa (% a.m.)</th>
                 <th className="px-4 py-2">Desconto</th>
                 <th className="px-4 py-2">A Receber</th>
                 <th className="px-4 py-2">Ações</th>
@@ -369,7 +372,7 @@ export default function NovaNota() {
             <tbody>
               {itensFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-6 text-center text-gray-500">Sem registros.</td>
+                  <td colSpan={10} className="px-4 py-6 text-center text-gray-500">Sem registros.</td>
                 </tr>
               )}
 
@@ -384,6 +387,7 @@ export default function NovaNota() {
                       <td className="px-4 py-2">
                         <span className={'inline-block transition-transform ' + (open ? 'rotate-90' : '')}>▶</span>
                       </td>
+                      <td className="px-4 py-2 whitespace-nowrap">{n.numero}</td>
 
                       <td className="px-4 py-2">
                         <div className="max-w-[180px] truncate" title={n.cedenteNome}>{n.cedenteNome}</div>
@@ -395,6 +399,7 @@ export default function NovaNota() {
 
                       <td className="px-4 py-2 whitespace-nowrap">{n.emissao}</td>
                       <td className="px-4 py-2 whitespace-nowrap">{n.vencimento}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">{n.taxaMes.toFixed(2)}%</td>
                       <td className="px-4 py-2 whitespace-nowrap">{money(n.desconto)}</td>
                       <td className="px-4 py-2 whitespace-nowrap">{money(n.valorAReceber)}</td>
 
@@ -416,15 +421,14 @@ export default function NovaNota() {
                       </td>
                     </tr>
 
-                    {/* Detalhes expandido: TODO o resto fica aqui */}
+                    {/* Detalhes expandido */}
                     {open && (
                       <tr className="bg-gray-50 border-t">
-                        <td colSpan={8} className="px-6 py-4">
+                        <td colSpan={10} className="px-6 py-4">
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="rounded-xl border bg-white p-4">
                               <div className="text-xs text-gray-500 mb-2">Cálculo</div>
                               <div className="space-y-1 text-sm">
-                                <div className="flex justify-between"><span>NF</span><b>{n.numero}</b></div>
                                 <div className="flex justify-between"><span>Valor da Nota</span><b>{money(n.valor)}</b></div>
                                 <div className="flex justify-between"><span>Taxa financeira</span><span>{n.taxaMes.toFixed(2)}% a.m.</span></div>
                                 <div className="flex justify-between"><span>Dias</span><span>{n.dias}</span></div>
@@ -435,7 +439,6 @@ export default function NovaNota() {
                                 <div className="flex justify-between border-t pt-2"><span>Desconto total</span><b>{money(n.desconto)}</b></div>
                                 <div className="flex justify-between"><span>Líquido ao Cedente</span><b>{money(n.liquidoCedente)}</b></div>
                                 <div className="flex justify-between"><span>Valor a Receber (nominal)</span><b>{money(n.valorAReceber)}</b></div>
-                                <div className="flex justify-between"><span>Status</span><b className="capitalize">{n.status}</b></div>
                               </div>
                             </div>
 
@@ -444,6 +447,7 @@ export default function NovaNota() {
                               <div className="space-y-1 text-sm">
                                 <div><b>Cedente:</b> {n.cedenteNome} — {n.cnpjCedente}</div>
                                 <div><b>Sacado:</b> {n.sacadoNome} — {n.cnpjSacado}</div>
+                                <div><b>NF:</b> {n.numero}</div>
                                 <div><b>Emissão/Venc.:</b> {n.emissao} → {n.vencimento}</div>
                               </div>
                             </div>
