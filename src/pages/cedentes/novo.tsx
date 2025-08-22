@@ -1,6 +1,7 @@
 import AdminLayout from '@/components/AdminLayout'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase' // ajuste o caminho conforme seu projeto
+import { supabase } from '@/lib/supabaseClient'
+
 
 type Risco = 'sem_risco' | 'moderado' | 'risco'
 
