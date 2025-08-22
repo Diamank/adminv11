@@ -1,156 +1,183 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
-import Table from '@/components/Table'
-import { cedentesMock } from '@/mocks/cedentes'
-import Link from 'next/link'
-import RiskBadge from '@/components/RiskBadge'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 
-// Tipagem de risco usada no sistema
-type RiskLevel = 'alto' | 'moderado' | 'baixo' | 'nao_avaliado'
-
-// Funções auxiliares
-function normalize(str: string = '') {
-  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-}
-function onlyDigits(str: string = '') {
-  return str.replace(/\D/g, '')
+type Cedente = {
+  id: number
+  cnpj: string
+  razao_social: string
+  endereco: string
+  conta_bancaria: string
+  risco: string
 }
 
-// Ícone da lupa
-function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-  )
-}
+type Risco = 'sem_risco' | 'moderado' | 'risco'
 
-// chave localStorage (retrocompatibilidade)
-const LS_KEY = 'cedentes_risco_v1'
+export default function CedentesPage() {
+  const [form, setForm] = useState({
+    cnpj: '',
+    razao_social: '',
+    endereco: '',
+    conta_bancaria: '',
+  })
+  const [risco, setRisco] = useState<Risco>('sem_risco')
+  const [cedentes, setCedentes] = useState<Cedente[]>([])
 
-// Hook de leitura de risco salvo
-function useRiskStore() {
-  const [map, setMap] = useState<Record<string, RiskLevel>>({})
-
+  // 🔹 carregar cedentes ao abrir
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY)
-      if (raw) setMap(JSON.parse(raw))
-    } catch {}
+    carregarCedentes()
   }, [])
 
-  const getRisk = (id: string): RiskLevel => map[id] ?? 'nao_avaliado'
-  return { getRisk }
-}
+  const carregarCedentes = async () => {
+    const { data, error } = await supabase.from('cedentes').select('*').order('id', { ascending: false })
+    if (error) {
+      console.error('Erro ao carregar cedentes:', error)
+    } else {
+      setCedentes(data || [])
+    }
+  }
 
-// Normaliza os formatos vindos do cadastro
-function toRiskLevel(r: any): RiskLevel {
-  if (r === 'alto' || r === 'moderado' || r === 'baixo' || r === 'nao_avaliado') return r
-  if (typeof r === 'boolean') return r ? 'alto' : 'baixo' // true = risco, false = sem risco
-  if (r === 'risco') return 'alto'
-  if (r === 'sem_risco') return 'baixo'
-  return 'nao_avaliado'
-}
-
-export default function Cedentes() {
-  const [query, setQuery] = useState('')
-  const [showSearch, setShowSearch] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const { getRisk } = useRiskStore()
-
-  useEffect(() => {
-    if (showSearch) inputRef.current?.focus()
-  }, [showSearch])
-
-  const data = useMemo(() => {
-    const q = query.trim()
-    if (!q) return cedentesMock
-    const hasNumber = /\d/.test(q)
-
-    return cedentesMock.filter((c) => {
-      const name = (c as any).razao || (c as any).nome || ''
-      const nameMatch = normalize(name).includes(normalize(q))
-      const cnpjMatch = onlyDigits(c.cnpj).includes(onlyDigits(q))
-      return hasNumber ? cnpjMatch || nameMatch : nameMatch
-    })
-  }, [query])
-
-  const headers = ['Razão Social', 'CNPJ', 'Endereço', 'Conta bancária', 'Risco', 'Criado', 'Ações']
-
-  const rows = data.map((c) => {
-    const level = toRiskLevel((c as any).risco ?? getRisk(c.id))
-
-    return [
-      (c as any).razao || (c as any).nome || '—',
-      c.cnpj,
-      c.endereco || '—',
-      c.contaBancaria || '—',
-      // Apenas a bolinha de risco
-      <span key={`risk-${c.id}`} title={level}>
-        <RiskBadge level={level} />
-      </span>,
-      c.criadoEm || '—',
-      <Link key={c.id} className="text-blue-600" href={`/cedentes/novo?edit=${c.id}`}>
-        Editar
-      </Link>,
-    ]
-  })
+  // 🔹 salvar novo cedente
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const { error } = await supabase.from('cedentes').insert([{ ...form, risco }])
+    if (error) {
+      alert('Erro: ' + error.message)
+    } else {
+      setForm({ cnpj: '', razao_social: '', endereco: '', conta_bancaria: '' })
+      setRisco('sem_risco')
+      carregarCedentes()
+    }
+  }
 
   return (
     <AdminLayout>
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-3 gap-3">
-          <Link href="/cedentes/novo" className="px-3 py-2 rounded-lg border bg-white">
-            + Novo cedente
-          </Link>
+      <h1 className="text-2xl font-bold mb-4">Gerenciar Cedentes</h1>
 
-          <div className="flex items-center gap-2">
-            {!showSearch ? (
-              <button
-                type="button"
-                onClick={() => setShowSearch(true)}
-                className="inline-flex items-center gap-2 rounded-xl border bg-white px-3 py-2 text-sm hover:bg-gray-50"
-                title="Buscar cedente"
-              >
-                <SearchIcon className="h-4 w-4 text-gray-600" />
-                Buscar
-              </button>
-            ) : (
-              <div className="relative w-[min(100%,26rem)]">
-                <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  ref={inputRef}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar por CNPJ ou Nome..."
-                  className="w-full rounded-xl border bg-white pl-9 pr-9 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    onClick={() => setQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    aria-label="Limpar"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            )}
+      {/* FORM CADASTRO */}
+      <form className="max-w-xl space-y-3 mb-10" onSubmit={onSubmit}>
+        <div>
+          <label className="block text-sm mb-1">CNPJ</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.cnpj}
+            onChange={e => setForm({ ...form, cnpj: e.target.value })}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Razão Social</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.razao_social}
+            onChange={e => setForm({ ...form, razao_social: e.target.value })}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Endereço</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.endereco}
+            onChange={e => setForm({ ...form, endereco: e.target.value })}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1">Conta bancária</label>
+          <input
+            className="w-full border rounded-lg px-3 py-2"
+            value={form.conta_bancaria}
+            onChange={e => setForm({ ...form, conta_bancaria: e.target.value })}
+          />
+        </div>
+
+        {/* ⬇️ Seleção de risco */}
+        <div className="pt-1">
+          <label className="block text-sm mb-2">Risco</label>
+          <div className="flex items-center gap-6">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="risco"
+                value="sem_risco"
+                checked={risco === 'sem_risco'}
+                onChange={() => setRisco('sem_risco')}
+                className="h-4 w-4"
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                <span className="text-sm text-gray-700">Sem risco</span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="risco"
+                value="moderado"
+                checked={risco === 'moderado'}
+                onChange={() => setRisco('moderado')}
+                className="h-4 w-4"
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                <span className="text-sm text-gray-700">Risco moderado</span>
+              </span>
+            </label>
+
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="risco"
+                value="risco"
+                checked={risco === 'risco'}
+                onChange={() => setRisco('risco')}
+                className="h-4 w-4"
+              />
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                <span className="text-sm text-gray-700">Risco</span>
+              </span>
+            </label>
           </div>
         </div>
 
-        <div className="text-xs text-gray-500 mb-2">
-          {data.length} {data.length === 1 ? 'cedente' : 'cedentes'} encontrados
+        <div className="pt-2 flex items-center gap-2">
+          <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
         </div>
+      </form>
 
-        <Table
-          headers={headers}
-          rows={rows}
-          emptyText={query ? 'Nenhum cedente encontrado para sua busca.' : 'Sem dados'}
-        />
-      </div>
+      {/* LISTAGEM */}
+      <h2 className="text-xl font-semibold mb-3">Cedentes cadastrados</h2>
+      {cedentes.length === 0 ? (
+        <p className="text-gray-500">Nenhum cedente cadastrado.</p>
+      ) : (
+        <table className="min-w-full border">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="px-3 py-2 border">CNPJ</th>
+              <th className="px-3 py-2 border">Razão Social</th>
+              <th className="px-3 py-2 border">Endereço</th>
+              <th className="px-3 py-2 border">Conta</th>
+              <th className="px-3 py-2 border">Risco</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cedentes.map(c => (
+              <tr key={c.id}>
+                <td className="px-3 py-2 border">{c.cnpj}</td>
+                <td className="px-3 py-2 border">{c.razao_social}</td>
+                <td className="px-3 py-2 border">{c.endereco}</td>
+                <td className="px-3 py-2 border">{c.conta_bancaria}</td>
+                <td className="px-3 py-2 border">{c.risco}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </AdminLayout>
   )
 }
