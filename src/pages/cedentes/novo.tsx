@@ -1,14 +1,14 @@
-// src/pages/cedentes/novo.tsx
 import AdminLayout from '@/components/AdminLayout'
 import { useState } from 'react'
+import { supabase } from '@/lib/supabase' // ajuste o caminho conforme seu projeto
 
 type Risco = 'sem_risco' | 'moderado' | 'risco'
 
 export default function NovoCedente() {
   const [form, setForm] = useState({
     cnpj: '',
-    razao: '',
-    fantasia: '',
+    razao_social: '',
+    nome_fantasia: '',
     email: '',
     telefone: '',
     endereco: '',
@@ -18,16 +18,30 @@ export default function NovoCedente() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // 👉 depois integramos com supabase:
-    // await supabase.from('cedentes').insert([{ ...form, risco }])
-    alert(`Cedente salvo (mock):
-CNPJ: ${form.cnpj}
-Razão: ${form.razao}
-Fantasia: ${form.fantasia}
-E-mail: ${form.email}
-Telefone: ${form.telefone}
-Conta: ${form.conta_bancaria}
-Risco: ${risco}`)
+
+    const { error } = await supabase.from('cedentes').insert([
+      {
+        ...form,
+        risco,
+      },
+    ])
+
+    if (error) {
+      console.error(error)
+      alert('❌ Erro ao salvar cedente!')
+    } else {
+      alert('✅ Cedente salvo com sucesso!')
+      setForm({
+        cnpj: '',
+        razao_social: '',
+        nome_fantasia: '',
+        email: '',
+        telefone: '',
+        endereco: '',
+        conta_bancaria: '',
+      })
+      setRisco('sem_risco')
+    }
   }
 
   return (
@@ -47,8 +61,8 @@ Risco: ${risco}`)
           <label className="block text-sm mb-1">Razão Social</label>
           <input
             className="w-full border rounded-lg px-3 py-2"
-            value={form.razao}
-            onChange={e => setForm({ ...form, razao: e.target.value })}
+            value={form.razao_social}
+            onChange={e => setForm({ ...form, razao_social: e.target.value })}
             required
           />
         </div>
@@ -57,8 +71,8 @@ Risco: ${risco}`)
           <label className="block text-sm mb-1">Nome Fantasia</label>
           <input
             className="w-full border rounded-lg px-3 py-2"
-            value={form.fantasia}
-            onChange={e => setForm({ ...form, fantasia: e.target.value })}
+            value={form.nome_fantasia}
+            onChange={e => setForm({ ...form, nome_fantasia: e.target.value })}
           />
         </div>
 
@@ -69,6 +83,7 @@ Risco: ${risco}`)
             className="w-full border rounded-lg px-3 py-2"
             value={form.email}
             onChange={e => setForm({ ...form, email: e.target.value })}
+            required
           />
         </div>
 
@@ -151,7 +166,9 @@ Risco: ${risco}`)
         </div>
 
         <div className="pt-2 flex items-center gap-2">
-          <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
+          <button type="submit" className="px-4 py-2 rounded-xl bg-black text-white">
+            Salvar
+          </button>
           <button
             type="button"
             className="px-3 py-2 rounded-lg border bg-white text-gray-400 cursor-not-allowed"
