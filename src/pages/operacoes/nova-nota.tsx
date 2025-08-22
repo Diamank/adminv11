@@ -100,6 +100,7 @@ type Nota = {
   liquidoCedente: number
   valorAReceber: number
   anexos: Anexo[]
+  status: 'pendente' | 'pago'          // <— campo interno de controle
 }
 
 const LS_KEY = 'ops_notas_v3'
@@ -109,6 +110,13 @@ const diffDias = (a: string, b: string) => {
   const d1 = new Date(a + 'T00:00:00')
   const d2 = new Date(b + 'T00:00:00')
   return Math.max(0, Math.round((+d2 - +d1) / (1000 * 60 * 60 * 24)))
+}
+const isOverdue = (venc: string) => {
+  if (!venc) return false
+  const today = new Date()
+  const dV = new Date(venc + 'T00:00:00')
+  // passa para o dia seguinte às 00:00 para não marcar “atrasado” às 00:00 do vencimento
+  return dV < new Date(today.getFullYear(), today.getMonth(), today.getDate())
 }
 
 /* ============================ Helpers UI ============================ */
@@ -153,6 +161,11 @@ export default function NovaNota() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch {}
   }
 
+  const marcarComoPago = (id: string) => {
+    persist(itens.map(n => (n.id === id ? { ...n, status: 'pago' } : n)))
+    if (expandedId === id) setExpandedId(null)
+  }
+
   const remover = (id: string) => {
     if (!confirm('Excluir nota?')) return
     const alvo = itens.find((n) => n.id === id)
@@ -162,15 +175,22 @@ export default function NovaNota() {
     if (editingId === id) cancelarEdicao()
   }
 
+  // Mostrar apenas pendentes/atrasadas
+  const visiveis = useMemo(
+    () => itens.filter(n => n.status !== 'pago'),
+    [itens]
+  )
+
   const itensFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase()
-    if (!q) return itens
-    return itens.filter((n) =>
+    const base = visiveis
+    if (!q) return base
+    return base.filter((n) =>
       [n.numero, n.cedenteNome, n.sacadoNome, n.cnpjCedente, n.cnpjSacado].some((v) =>
         v.toLowerCase().includes(q)
       )
     )
-  }, [itens, busca])
+  }, [visiveis, busca])
 
   // FORM
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -285,6 +305,7 @@ export default function NovaNota() {
           liquidoCedente: calc.liquido,
           valorAReceber: calc.receber,
           anexos: anexosAtualizados,
+          status: n.status, // mantém
         }
       }))
       const keepId = editingId
@@ -314,6 +335,7 @@ export default function NovaNota() {
       liquidoCedente: calc.liquido,
       valorAReceber: calc.receber,
       anexos: novosAnexos,
+      status: 'pendente', // novo registro nasce pendente
     }
     persist([novo, ...itens])
     limparForm()
@@ -352,7 +374,7 @@ export default function NovaNota() {
           />
         </div>
 
-        {/* LISTA (Resumo enxuto) */}
+        {/* LISTA (Resumo enxuto) — apenas pendentes/atrasadas */}
         <div className="overflow-hidden rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -378,16 +400,24 @@ export default function NovaNota() {
 
               {itensFiltrados.map((n) => {
                 const open = expandedId === n.id
+                const atrasada = n.status !== 'pago' && isOverdue(n.vencimento)
                 return (
                   <Fragment key={n.id}>
                     <tr
-                      className={'border-t cursor-pointer hover:bg-gray-50 ' + (open ? 'bg-gray-50' : '')}
+                      className={
+                        'border-t cursor-pointer hover:bg-gray-50 ' +
+                        (open ? 'bg-gray-50 ' : '') +
+                        (atrasada ? 'bg-red-50/40 ' : '')
+                      }
                       onClick={() => setExpandedId(open ? null : n.id)}
                     >
                       <td className="px-4 py-2">
                         <span className={'inline-block transition-transform ' + (open ? 'rotate-90' : '')}>▶</span>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap">{n.numero}</td>
+                      <td className="px-4 py-2 whitespace-nowrap flex items-center gap-2">
+                        {atrasada && <span className="h-2 w-2 rounded-full bg-red-500 inline-block" title="Atrasada" />}
+                        {n.numero}
+                      </td>
 
                       <td className="px-4 py-2">
                         <div className="max-w-[180px] truncate" title={n.cedenteNome}>{n.cedenteNome}</div>
@@ -410,6 +440,12 @@ export default function NovaNota() {
                             onClick={(e) => { e.stopPropagation(); iniciarEdicao(n) }}
                           >
                             Editar
+                          </button>
+                          <button
+                            className="px-2 py-1 border rounded"
+                            onClick={(e) => { e.stopPropagation(); marcarComoPago(n.id) }}
+                          >
+                            Marcar como pago
                           </button>
                           <button
                             className="px-2 py-1 border rounded text-red-600"
