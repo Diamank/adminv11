@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import React, { Fragment, useEffect, useMemo, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
 import { cedentesMock } from '@/mocks/cedentes'
 import { sacadosMock } from '@/mocks/sacados'
@@ -59,11 +59,7 @@ function UploadBox({
               <label htmlFor={inputId} className="px-3 py-1.5 text-sm rounded-lg border cursor-pointer hover:bg-gray-50">
                 Trocar
               </label>
-              <button
-                type="button"
-                onClick={() => onChange(null)}
-                className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50"
-              >
+              <button type="button" onClick={() => onChange(null)} className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50">
                 Remover
               </button>
             </div>
@@ -92,10 +88,10 @@ type Nota = {
   vencimento: string // yyyy-mm-dd
   dias: number
   valor: number
-  taxaMes: number // % a.m. (financeira)
+  taxaMes: number // % a.m.
   tarifaFixa: number // R$
-  taxaAdmPerc: number // % sobre valor
-  iofPerc: number // % sobre valor
+  taxaAdmPerc: number // %
+  iofPerc: number // %
   desconto: number
   liquidoCedente: number
   valorAReceber: number
@@ -173,7 +169,7 @@ export default function NovaNota() {
     )
   }, [itens, busca])
 
-  // FORM (colapsado)
+  // FORM
   const [mostrarForm, setMostrarForm] = useState(false)
   const [cedenteId, setCedenteId] = useState('')
   const [sacadoId, setSacadoId] = useState('')
@@ -181,10 +177,10 @@ export default function NovaNota() {
   const [emissao, setEmissao] = useState('')
   const [vencimento, setVencimento] = useState('')
   const [valor, setValor] = useState<number | ''>('')
-  const [taxaMes, setTaxaMes] = useState<number | ''>('')        // financeira % a.m.
+  const [taxaMes, setTaxaMes] = useState<number | ''>('')        // % a.m.
   const [tarifaFixa, setTarifaFixa] = useState<number | ''>('')  // R$
-  const [taxaAdmPerc, setTaxaAdmPerc] = useState<number | ''>('')// % sobre valor
-  const [iofPerc, setIofPerc] = useState<number | ''>('')        // % sobre valor
+  const [taxaAdmPerc, setTaxaAdmPerc] = useState<number | ''>('')// %
+  const [iofPerc, setIofPerc] = useState<number | ''>('')        // %
 
   const cedente = useMemo(() => cedentesMock.find((c) => c.id === cedenteId), [cedenteId])
   const sacado = useMemo(() => sacadosMock.find((s) => s.id === sacadoId), [sacadoId])
@@ -198,6 +194,7 @@ export default function NovaNota() {
     const iof = typeof iofPerc === 'number' ? iofPerc : 0
 
     const descontoFinanceiro = v * (t / 100) * (dias / 30)
+    the_d: null
     const descontoAdm = v * (adm / 100)
     const descontoIof = v * (iof / 100)
     const descontoTotal = descontoFinanceiro + fix + descontoAdm + descontoIof
@@ -207,7 +204,7 @@ export default function NovaNota() {
     return { descontoFinanceiro, fix, descontoAdm, descontoIof, descontoTotal, liquido, receber }
   }, [valor, taxaMes, dias, tarifaFixa, taxaAdmPerc, iofPerc])
 
-  // anexos (novos no form)
+  // anexos
   const [nfFile, setNfFile] = useState<File | null>(null)
   const [boletoFile, setBoletoFile] = useState<File | null>(null)
   const [aditivoFile, setAditivoFile] = useState<File | null>(null)
@@ -347,65 +344,60 @@ export default function NovaNota() {
         {/* Busca */}
         <div className="flex gap-3">
           <input
-            placeholder="Buscar por NF, cedente, sacado, CNPJ…"
+            placeholder="Buscar por cedente, sacado ou CNPJ…"
             className="w-full border rounded-lg px-3 py-2 bg-white"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
           />
         </div>
 
-        {/* LISTA com expansível */}
+        {/* LISTA: apenas Cedente, Sacado, Emissão, Venc., Desconto e A Receber */}
         <div className="overflow-hidden rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left">
                 <th className="px-4 py-2 w-10"></th>
-                <th className="px-4 py-2">NF</th>
                 <th className="px-4 py-2">Cedente</th>
                 <th className="px-4 py-2">Sacado</th>
                 <th className="px-4 py-2">Emissão</th>
                 <th className="px-4 py-2">Venc.</th>
-                <th className="px-4 py-2">Dias</th>
-                <th className="px-4 py-2">Valor</th>
-                <th className="px-4 py-2">Taxa (% a.m.)</th>
                 <th className="px-4 py-2">Desconto</th>
-                <th className="px-4 py-2">Líquido</th>
                 <th className="px-4 py-2">A Receber</th>
-                <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
               {itensFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="px-4 py-6 text-center text-gray-500">Sem registros.</td>
+                  <td colSpan={8} className="px-4 py-6 text-center text-gray-500">Sem registros.</td>
                 </tr>
               )}
 
               {itensFiltrados.map((n) => {
                 const open = expandedId === n.id
                 return (
-                  <>
+                  <Fragment key={n.id}>
                     <tr
-                      key={n.id}
                       className={'border-t cursor-pointer hover:bg-gray-50 ' + (open ? 'bg-gray-50' : '')}
                       onClick={() => setExpandedId(open ? null : n.id)}
                     >
                       <td className="px-4 py-2">
                         <span className={'inline-block transition-transform ' + (open ? 'rotate-90' : '')}>▶</span>
                       </td>
-                      <td className="px-4 py-2">{n.numero}</td>
-                      <td className="px-4 py-2">{n.cedenteNome}</td>
-                      <td className="px-4 py-2">{n.sacadoNome}</td>
-                      <td className="px-4 py-2">{n.emissao}</td>
-                      <td className="px-4 py-2">{n.vencimento}</td>
-                      <td className="px-4 py-2">{n.dias}</td>
-                      <td className="px-4 py-2">{money(n.valor)}</td>
-                      <td className="px-4 py-2">{n.taxaMes.toFixed(2)}%</td>
-                      <td className="px-4 py-2">{money(n.desconto)}</td>
-                      <td className="px-4 py-2">{money(n.liquidoCedente)}</td>
-                      <td className="px-4 py-2">{money(n.valorAReceber)}</td>
-                      <td className="px-4 py-2 capitalize">{n.status}</td>
+
+                      <td className="px-4 py-2">
+                        <div className="max-w-[180px] truncate" title={n.cedenteNome}>{n.cedenteNome}</div>
+                      </td>
+
+                      <td className="px-4 py-2">
+                        <div className="max-w-[180px] truncate" title={n.sacadoNome}>{n.sacadoNome}</div>
+                      </td>
+
+                      <td className="px-4 py-2 whitespace-nowrap">{n.emissao}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">{n.vencimento}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">{money(n.desconto)}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">{money(n.valorAReceber)}</td>
+
                       <td className="px-4 py-2">
                         <div className="flex gap-2">
                           <button
@@ -424,14 +416,15 @@ export default function NovaNota() {
                       </td>
                     </tr>
 
-                    {/* Detalhes expandido */}
+                    {/* Detalhes expandido: TODO o resto fica aqui */}
                     {open && (
                       <tr className="bg-gray-50 border-t">
-                        <td colSpan={14} className="px-6 py-4">
+                        <td colSpan={8} className="px-6 py-4">
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="rounded-xl border bg-white p-4">
                               <div className="text-xs text-gray-500 mb-2">Cálculo</div>
                               <div className="space-y-1 text-sm">
+                                <div className="flex justify-between"><span>NF</span><b>{n.numero}</b></div>
                                 <div className="flex justify-between"><span>Valor da Nota</span><b>{money(n.valor)}</b></div>
                                 <div className="flex justify-between"><span>Taxa financeira</span><span>{n.taxaMes.toFixed(2)}% a.m.</span></div>
                                 <div className="flex justify-between"><span>Dias</span><span>{n.dias}</span></div>
@@ -441,6 +434,8 @@ export default function NovaNota() {
                                 <div className="flex justify-between"><span>IOF</span><b>{money(n.valor * (n.iofPerc/100))}</b></div>
                                 <div className="flex justify-between border-t pt-2"><span>Desconto total</span><b>{money(n.desconto)}</b></div>
                                 <div className="flex justify-between"><span>Líquido ao Cedente</span><b>{money(n.liquidoCedente)}</b></div>
+                                <div className="flex justify-between"><span>Valor a Receber (nominal)</span><b>{money(n.valorAReceber)}</b></div>
+                                <div className="flex justify-between"><span>Status</span><b className="capitalize">{n.status}</b></div>
                               </div>
                             </div>
 
@@ -449,7 +444,6 @@ export default function NovaNota() {
                               <div className="space-y-1 text-sm">
                                 <div><b>Cedente:</b> {n.cedenteNome} — {n.cnpjCedente}</div>
                                 <div><b>Sacado:</b> {n.sacadoNome} — {n.cnpjSacado}</div>
-                                <div><b>NF:</b> {n.numero}</div>
                                 <div><b>Emissão/Venc.:</b> {n.emissao} → {n.vencimento}</div>
                               </div>
                             </div>
@@ -477,7 +471,7 @@ export default function NovaNota() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
@@ -616,7 +610,7 @@ export default function NovaNota() {
                 </div>
               </div>
 
-              {/* anexos (bonitos) */}
+              {/* anexos */}
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <UploadBox label="Anexo — Nota Fiscal" accept=".pdf,image/*" file={nfFile} onChange={setNfFile}
                   helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
