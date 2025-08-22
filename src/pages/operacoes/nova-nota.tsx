@@ -100,23 +100,44 @@ type Nota = {
   liquidoCedente: number
   valorAReceber: number
   anexos: Anexo[]
-  status: 'pendente' | 'pago'          // <— campo interno de controle
+  // refs para atualizar/limpar lançamentos relacionados
+  refs?: {
+    crIds: string[] // contas a receber
+    cpIds: string[] // contas a pagar
+  }
 }
 
-const LS_KEY = 'ops_notas_v3'
+type LancamentoCR = {
+  id: string
+  tipo: 'cr'
+  notaId: string
+  titulo: string
+  contraparte: string // sacado
+  vencimento: string
+  valor: number
+  pago: boolean
+}
+
+type LancamentoCP = {
+  id: string
+  tipo: 'cp'
+  notaId: string
+  titulo: string
+  data: string
+  valor: number
+  pago: boolean
+}
+
+const LS_NOTAS = 'ops_notas_v3'
+const LS_CR = 'fin_cr_v1'
+const LS_CP = 'fin_cp_v1'
+
 const money = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const diffDias = (a: string, b: string) => {
   if (!a || !b) return 0
   const d1 = new Date(a + 'T00:00:00')
   const d2 = new Date(b + 'T00:00:00')
   return Math.max(0, Math.round((+d2 - +d1) / (1000 * 60 * 60 * 24)))
-}
-const isOverdue = (venc: string) => {
-  if (!venc) return false
-  const today = new Date()
-  const dV = new Date(venc + 'T00:00:00')
-  // passa para o dia seguinte às 00:00 para não marcar “atrasado” às 00:00 do vencimento
-  return dV < new Date(today.getFullYear(), today.getMonth(), today.getDate())
 }
 
 /* ============================ Helpers UI ============================ */
@@ -138,6 +159,153 @@ function InputPercent(props: React.InputHTMLAttributes<HTMLInputElement>) {
 }
 /* ==================================================================== */
 
+/* ============================ Ledger helpers ============================ */
+function loadCR(): LancamentoCR[] {
+  try { return JSON.parse(localStorage.getItem(LS_CR) || '[]') } catch { return [] }
+}
+function loadCP(): LancamentoCP[] {
+  try { return JSON.parse(localStorage.getItem(LS_CP) || '[]') } catch { return [] }
+}
+function saveCR(data: LancamentoCR[]) {
+  try { localStorage.setItem(LS_CR, JSON.stringify(data)) } catch {}
+}
+function saveCP(data: LancamentoCP[]) {
+  try { localStorage.setItem(LS_CP, JSON.stringify(data)) } catch {}
+}
+
+function uid(prefix: string) {
+  return `${prefix}-${Math.random().toString(36).slice(2, 8)}${Date.now()}`
+}
+
+/** Cria os lançamentos de CR/CP para a nota e retorna os ids criados */
+function createLedgerEntries(n: Nota) {
+  const cr = loadCR()
+  const cp = loadCP()
+
+  // Contas a Receber — Valor nominal, no vencimento
+  const crItem: LancamentoCR = {
+    id: uid('CR'),
+    tipo: 'cr',
+    notaId: n.id,
+    titulo: `NF ${n.numero} — ${n.sacadoNome}`,
+    contraparte: n.sacadoNome,
+    vencimento: n.vencimento,
+    valor: n.valorAReceber,
+    pago: false,
+  }
+  cr.unshift(crItem)
+
+  // Contas a Pagar — Taxas
+  const cpItems: LancamentoCP[] = []
+
+  if (n.tarifaFixa > 0) {
+    cpItems.push({
+      id: uid('CP'),
+      tipo: 'cp',
+      notaId: n.id,
+      titulo: `Tarifa fixa NF ${n.numero}`,
+      data: n.emissao,
+      valor: n.tarifaFixa,
+      pago: false,
+    })
+  }
+  const taxaAdm = n.valor * (n.taxaAdmPerc / 100)
+  if (taxaAdm > 0) {
+    cpItems.push({
+      id: uid('CP'),
+      tipo: 'cp',
+      notaId: n.id,
+      titulo: `Taxa adm. NF ${n.numero}`,
+      data: n.emissao,
+      valor: taxaAdm,
+      pago: false,
+    })
+  }
+  const iof = n.valor * (n.iofPerc / 100)
+  if (iof > 0) {
+    cpItems.push({
+      id: uid('CP'),
+      tipo: 'cp',
+      notaId: n.id,
+      titulo: `IOF NF ${n.numero}`,
+      data: n.emissao,
+      valor: iof,
+      pago: false,
+    })
+  }
+  const custoFin = n.valor * (n.taxaMes / 100) * (n.dias / 30)
+  if (custoFin > 0) {
+    cpItems.push({
+      id: uid('CP'),
+      tipo: 'cp',
+      notaId: n.id,
+      titulo: `Custo financeiro NF ${n.numero}`,
+      data: n.vencimento, // reconhece no vencimento
+      valor: custoFin,
+      pago: false,
+    })
+  }
+
+  saveCR([crItem, ...cr])
+  saveCP([...cpItems, ...cp])
+
+  return { crIds: [crItem.id], cpIds: cpItems.map(i => i.id) }
+}
+
+/** Atualiza os lançamentos existentes para refletir alterações na nota */
+function updateLedgerEntries(n: Nota) {
+  if (!n.refs) return
+  const cr = loadCR()
+  const cp = loadCP()
+
+  // atualizar CR (assume 1 por nota)
+  for (const id of n.refs.crIds) {
+    const i = cr.findIndex(x => x.id === id)
+    if (i >= 0) {
+      cr[i] = {
+        ...cr[i],
+        titulo: `NF ${n.numero} — ${n.sacadoNome}`,
+        contraparte: n.sacadoNome,
+        vencimento: n.vencimento,
+        valor: n.valorAReceber,
+      }
+    }
+  }
+
+  // recalcula valores
+  const taxaAdm = n.valor * (n.taxaAdmPerc / 100)
+  const iof = n.valor * (n.iofPerc / 100)
+  const custoFin = n.valor * (n.taxaMes / 100) * (n.dias / 30)
+
+  for (const id of n.refs.cpIds) {
+    const j = cp.findIndex(x => x.id === id)
+    if (j < 0) continue
+    const titulo = cp[j].titulo
+    if (titulo.startsWith('Tarifa fixa')) {
+      cp[j] = { ...cp[j], data: n.emissao, valor: n.tarifaFixa }
+    } else if (titulo.startsWith('Taxa adm.')) {
+      cp[j] = { ...cp[j], data: n.emissao, valor: taxaAdm }
+    } else if (titulo.startsWith('IOF')) {
+      cp[j] = { ...cp[j], data: n.emissao, valor: iof }
+    } else if (titulo.startsWith('Custo financeiro')) {
+      cp[j] = { ...cp[j], data: n.vencimento, valor: custoFin }
+    }
+  }
+
+  saveCR(cr)
+  saveCP(cp)
+}
+
+/** Remove todos os lançamentos vinculados à nota */
+function deleteLedgerEntries(n: Nota) {
+  if (!n.refs) return
+  const cr = loadCR().filter(x => !n.refs!.crIds.includes(x.id))
+  const cp = loadCP().filter(x => !n.refs!.cpIds.includes(x.id))
+  saveCR(cr)
+  saveCP(cp)
+}
+/* ======================================================================= */
+
 export default function NovaNota() {
   // LISTA
   const [itens, setItens] = useState<Nota[]>([])
@@ -149,48 +317,37 @@ export default function NovaNota() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(LS_KEY)
+      const raw = localStorage.getItem(LS_NOTAS)
       setItens(raw ? JSON.parse(raw) : [])
     } catch {
       setItens([])
     }
   }, [])
 
-  const persist = (next: Nota[]) => {
+  const persistNotas = (next: Nota[]) => {
     setItens(next)
-    try { localStorage.setItem(LS_KEY, JSON.stringify(next)) } catch {}
-  }
-
-  const marcarComoPago = (id: string) => {
-    persist(itens.map(n => (n.id === id ? { ...n, status: 'pago' } : n)))
-    if (expandedId === id) setExpandedId(null)
+    try { localStorage.setItem(LS_NOTAS, JSON.stringify(next)) } catch {}
   }
 
   const remover = (id: string) => {
     if (!confirm('Excluir nota?')) return
     const alvo = itens.find((n) => n.id === id)
     alvo?.anexos?.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
-    persist(itens.filter((n) => n.id !== id))
+    if (alvo) deleteLedgerEntries(alvo)
+    persistNotas(itens.filter((n) => n.id !== id))
     if (expandedId === id) setExpandedId(null)
     if (editingId === id) cancelarEdicao()
   }
 
-  // Mostrar apenas pendentes/atrasadas
-  const visiveis = useMemo(
-    () => itens.filter(n => n.status !== 'pago'),
-    [itens]
-  )
-
   const itensFiltrados = useMemo(() => {
     const q = busca.trim().toLowerCase()
-    const base = visiveis
-    if (!q) return base
-    return base.filter((n) =>
+    if (!q) return itens
+    return itens.filter((n) =>
       [n.numero, n.cedenteNome, n.sacadoNome, n.cnpjCedente, n.cnpjSacado].some((v) =>
         v.toLowerCase().includes(q)
       )
     )
-  }, [visiveis, busca])
+  }, [itens, busca])
 
   // FORM
   const [mostrarForm, setMostrarForm] = useState(false)
@@ -273,19 +430,10 @@ export default function NovaNota() {
     if (aditivoFile) novosAnexos.push({ tipo: 'aditivo', nome: aditivoFile.name, tamanho: aditivoFile.size, previewUrl: URL.createObjectURL(aditivoFile) })
 
     if (editingId) {
-      persist(itens.map(n => {
+      // Atualização
+      const atualizada = itens.map(n => {
         if (n.id !== editingId) return n
-        let anexosAtualizados = [...n.anexos]
-        for (const a of novosAnexos) {
-          const idx = anexosAtualizados.findIndex(x => x.tipo === a.tipo)
-          if (idx >= 0) {
-            if (anexosAtualizados[idx].previewUrl) URL.revokeObjectURL(anexosAtualizados[idx].previewUrl!)
-            anexosAtualizados[idx] = a
-          } else {
-            anexosAtualizados.push(a)
-          }
-        }
-        return {
+        const next: Nota = {
           ...n,
           cedenteId,
           cedenteNome: (cedentesMock.find(c => c.id === cedenteId) as any)?.razao || (cedentesMock.find(c => c.id === cedenteId) as any)?.nome || '',
@@ -304,10 +452,22 @@ export default function NovaNota() {
           desconto: calc.descontoTotal,
           liquidoCedente: calc.liquido,
           valorAReceber: calc.receber,
-          anexos: anexosAtualizados,
-          status: n.status, // mantém
+          anexos: [...n.anexos], // mantém os atuais, substitui os enviados
         }
-      }))
+        for (const a of novosAnexos) {
+          const idx = next.anexos.findIndex(x => x.tipo === a.tipo)
+          if (idx >= 0) {
+            if (next.anexos[idx].previewUrl) URL.revokeObjectURL(next.anexos[idx].previewUrl!)
+            next.anexos[idx] = a
+          } else {
+            next.anexos.push(a)
+          }
+        }
+        // Atualiza lançamentos financeiros
+        updateLedgerEntries({ ...next, refs: n.refs })
+        return next
+      })
+      persistNotas(atualizada)
       const keepId = editingId
       cancelarEdicao()
       setExpandedId(keepId)
@@ -315,6 +475,7 @@ export default function NovaNota() {
       return
     }
 
+    // Nova
     const novo: Nota = {
       id: 'NF-' + Date.now(),
       cedenteId,
@@ -335,13 +496,17 @@ export default function NovaNota() {
       liquidoCedente: calc.liquido,
       valorAReceber: calc.receber,
       anexos: novosAnexos,
-      status: 'pendente', // novo registro nasce pendente
     }
-    persist([novo, ...itens])
+
+    // cria lançamentos financeiros e salva refs
+    const refs = createLedgerEntries(novo)
+    const novoComRefs: Nota = { ...novo, refs }
+
+    persistNotas([novoComRefs, ...itens])
     limparForm()
     setMostrarForm(false)
-    setExpandedId(novo.id)
-    alert('Nota salva!')
+    setExpandedId(novoComRefs.id)
+    alert('Nota salva e lançamentos criados em Contas a Pagar / Receber!')
   }
 
   return (
@@ -374,7 +539,7 @@ export default function NovaNota() {
           />
         </div>
 
-        {/* LISTA (Resumo enxuto) — apenas pendentes/atrasadas */}
+        {/* LISTA (Resumo enxuto) */}
         <div className="overflow-hidden rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -400,24 +565,16 @@ export default function NovaNota() {
 
               {itensFiltrados.map((n) => {
                 const open = expandedId === n.id
-                const atrasada = n.status !== 'pago' && isOverdue(n.vencimento)
                 return (
                   <Fragment key={n.id}>
                     <tr
-                      className={
-                        'border-t cursor-pointer hover:bg-gray-50 ' +
-                        (open ? 'bg-gray-50 ' : '') +
-                        (atrasada ? 'bg-red-50/40 ' : '')
-                      }
+                      className={'border-t cursor-pointer hover:bg-gray-50 ' + (open ? 'bg-gray-50' : '')}
                       onClick={() => setExpandedId(open ? null : n.id)}
                     >
                       <td className="px-4 py-2">
                         <span className={'inline-block transition-transform ' + (open ? 'rotate-90' : '')}>▶</span>
                       </td>
-                      <td className="px-4 py-2 whitespace-nowrap flex items-center gap-2">
-                        {atrasada && <span className="h-2 w-2 rounded-full bg-red-500 inline-block" title="Atrasada" />}
-                        {n.numero}
-                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">{n.numero}</td>
 
                       <td className="px-4 py-2">
                         <div className="max-w-[180px] truncate" title={n.cedenteNome}>{n.cedenteNome}</div>
@@ -440,12 +597,6 @@ export default function NovaNota() {
                             onClick={(e) => { e.stopPropagation(); iniciarEdicao(n) }}
                           >
                             Editar
-                          </button>
-                          <button
-                            className="px-2 py-1 border rounded"
-                            onClick={(e) => { e.stopPropagation(); marcarComoPago(n.id) }}
-                          >
-                            Marcar como pago
                           </button>
                           <button
                             className="px-2 py-1 border rounded text-red-600"
