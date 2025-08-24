@@ -3,12 +3,21 @@ import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
 import Link from 'next/link'
 import RiskBadge from '@/components/RiskBadge'
-import { sacadosMock } from '@/mocks/sacados' // ajuste se o caminho for outro
+import { supabase } from '@/lib/supabaseClient'
 
-// Tipagem de risco usada no sistema
-type RiskLevel = 'alto' | 'moderado' | 'baixo' | 'nao_avaliado'
+type Sacado = {
+  id: string
+  razao_social: string
+  nome_fantasia?: string
+  cnpj: string
+  email?: string
+  telefone?: string
+  endereco?: string
+  contato?: string
+  risco: 'sem_risco' | 'moderado' | 'risco'
+  created_at: string
+}
 
-// Utils locais
 function normalize(str: string = '') {
   return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 }
@@ -16,7 +25,19 @@ function onlyDigits(str: string = '') {
   return str.replace(/\D/g, '')
 }
 
-// Lupa SVG
+function toRiskLevel(risco: string) {
+  switch (risco) {
+    case 'sem_risco':
+      return 'baixo'
+    case 'moderado':
+      return 'moderado'
+    case 'risco':
+      return 'alto'
+    default:
+      return 'nao_avaliado'
+  }
+}
+
 function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...props}>
@@ -26,74 +47,79 @@ function SearchIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-// Retrocompat com storage antigo (se você usou algo similar em cedentes)
-const LS_KEY = 'sacados_risco_v1'
-function useRiskStore() {
-  const [map, setMap] = useState<Record<string, RiskLevel>>({})
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY)
-      if (raw) setMap(JSON.parse(raw))
-    } catch {}
-  }, [])
-  const getRisk = (id: string): RiskLevel => map[id] ?? 'nao_avaliado'
-  return { getRisk }
-}
-
-// Normaliza formatos: boolean | 'risco' | 'sem_risco' | 'moderado' → RiskLevel
-function toRiskLevel(r: any): RiskLevel {
-  if (r === 'alto' || r === 'moderado' || r === 'baixo' || r === 'nao_avaliado') return r
-  if (typeof r === 'boolean') return r ? 'alto' : 'baixo'
-  if (r === 'risco') return 'alto'
-  if (r === 'moderado') return 'moderado'
-  if (r === 'sem_risco') return 'baixo'
-  return 'nao_avaliado'
-}
-
 export default function Sacados() {
   const [query, setQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
-  const { getRisk } = useRiskStore()
+  const [data, setData] = useState<Sacado[]>([])
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const { data, error } = await supabase
+        .from('sacados')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) console.error(error)
+      else setData(data || [])
+    }
+    fetchData()
+  }, [])
 
   useEffect(() => {
     if (showSearch) inputRef.current?.focus()
   }, [showSearch])
 
-  const data = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = query.trim()
-    if (!q) return sacadosMock
+    if (!q) return data
     const hasNumber = /\d/.test(q)
 
-    return sacadosMock.filter((s) => {
-      const name = (s as any).razao || (s as any).nome || ''
+    return data.filter((s) => {
+      const name = s.razao_social || s.nome_fantasia || ''
       const nameMatch = normalize(name).includes(normalize(q))
-      // aceita buscar por CNPJ ou CPF (qual campo existir)
-      const doc = onlyDigits((s as any).cnpj || (s as any).cpf || '')
+      const doc = onlyDigits(s.cnpj || '')
       const docMatch = doc.includes(onlyDigits(q))
       return hasNumber ? docMatch || nameMatch : nameMatch
     })
-  }, [query])
+  }, [query, data])
 
   const headers = ['Nome/Razão', 'Documento', 'Endereço', 'Contato', 'Risco', 'Criado', 'Ações']
-  const rows = data.map((s) => {
-    const level = toRiskLevel((s as any).risco ?? getRisk(s.id))
-    const doc = (s as any).cnpj || (s as any).cpf || '—'
-
-    return [
-      (s as any).razao || (s as any).nome || '—',
-      doc,
-      (s as any).endereco || '—',
-      (s as any).contato || (s as any).email || (s as any).telefone || '—',
-      <span key={`risk-${s.id}`} title={level}>
-        <RiskBadge level={level} />
-      </span>,
-      (s as any).criadoEm || '—',
-      <Link key={s.id} className="text-blue-600" href={`/sacados/novo?edit=${s.id}`}>
+  const rows = filtered.map((s) => [
+    s.razao_social || s.nome_fantasia || '—',
+    s.cnpj,
+    s.endereco || '—',
+    s.contato || s.email || s.telefone || '—',
+    <span key={`risk-${s.id}`} title={s.risco}>
+      <RiskBadge level={toRiskLevel(s.risco)} />
+    </span>,
+    new Date(s.created_at).toLocaleDateString('pt-BR'),
+    <div key={`actions-${s.id}`} className="flex gap-2">
+      <Link
+        href={`/sacados/novo?edit=${s.id}`}
+        className="px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-600 hover:bg-blue-200 transition"
+      >
         Editar
-      </Link>,
-    ]
-  })
+      </Link>
+      <button
+        onClick={async () => {
+          if (confirm('Tem certeza que deseja excluir este sacado?')) {
+            const { error } = await supabase.from('sacados').delete().eq('id', s.id)
+            if (error) {
+              alert('❌ Erro ao excluir')
+              console.error(error)
+            } else {
+              alert('✅ Sacado excluído com sucesso!')
+              setData((prev) => prev.filter((item) => item.id !== s.id))
+            }
+          }
+        }}
+        className="px-3 py-1 rounded-full text-sm bg-red-100 text-red-600 hover:bg-red-200 transition"
+      >
+        Excluir
+      </button>
+    </div>,
+  ])
 
   return (
     <AdminLayout>
@@ -121,7 +147,7 @@ export default function Sacados() {
                   ref={inputRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscar por CNPJ/CPF ou Nome..."
+                  placeholder="Buscar por CNPJ ou Nome..."
                   className="w-full rounded-xl border bg-white pl-9 pr-9 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-200"
                 />
                 {query && (
@@ -140,7 +166,7 @@ export default function Sacados() {
         </div>
 
         <div className="text-xs text-gray-500 mb-2">
-          {data.length} {data.length === 1 ? 'sacado' : 'sacados'} encontrados
+          {filtered.length} {filtered.length === 1 ? 'sacado' : 'sacados'} encontrados
         </div>
 
         <Table
