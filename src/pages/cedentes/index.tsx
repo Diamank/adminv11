@@ -3,7 +3,7 @@ import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
 import Link from 'next/link'
 import RiskBadge from '@/components/RiskBadge'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/lib/supabase' // ajuste se estiver como supabaseClient
 
 type Cedente = {
   id: string
@@ -85,9 +85,31 @@ export default function Cedentes() {
       <RiskBadge level={c.risco as any} />
     </span>,
     new Date(c.created_at).toLocaleDateString('pt-BR'),
-    <Link key={c.id} className="text-blue-600" href={`/cedentes/novo?edit=${c.id}`}>
-      Editar
-    </Link>,
+    <div key={`actions-${c.id}`} className="flex gap-2">
+      <Link
+        href={`/cedentes/novo?edit=${c.id}`}
+        className="px-2 py-1 rounded-lg text-sm border border-blue-500 text-blue-600 hover:bg-blue-50"
+      >
+        Editar
+      </Link>
+      <button
+        onClick={async () => {
+          if (confirm('Tem certeza que deseja excluir este cedente?')) {
+            const { error } = await supabase.from('cedentes').delete().eq('id', c.id)
+            if (error) {
+              alert('❌ Erro ao excluir')
+              console.error(error)
+            } else {
+              alert('✅ Cedente excluído com sucesso!')
+              setData((prev) => prev.filter((item) => item.id !== c.id))
+            }
+          }
+        }}
+        className="px-2 py-1 rounded-lg text-sm border border-red-500 text-red-600 hover:bg-red-50"
+      >
+        Excluir
+      </button>
+    </div>,
   ])
 
   return (
