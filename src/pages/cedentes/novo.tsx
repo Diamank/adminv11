@@ -1,11 +1,14 @@
 import AdminLayout from '@/components/AdminLayout'
-import { useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
-
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/router'
+import { supabase } from '@/lib/supabase' // ajuste para supabaseClient se você manteve esse nome
 
 type Risco = 'sem_risco' | 'moderado' | 'risco'
 
 export default function NovoCedente() {
+  const router = useRouter()
+  const { edit } = router.query
+
   const [form, setForm] = useState({
     cnpj: '',
     razao_social: '',
@@ -16,33 +19,64 @@ export default function NovoCedente() {
     conta_bancaria: '',
   })
   const [risco, setRisco] = useState<Risco>('sem_risco')
+  const [loading, setLoading] = useState(false)
+
+  // Buscar cedente se estiver editando
+  useEffect(() => {
+    const fetchCedente = async () => {
+      if (!edit) return
+      setLoading(true)
+      const { data, error } = await supabase.from('cedentes').select('*').eq('id', edit).single()
+      if (error) {
+        console.error(error)
+      } else if (data) {
+        setForm({
+          cnpj: data.cnpj || '',
+          razao_social: data.razao_social || '',
+          nome_fantasia: data.nome_fantasia || '',
+          email: data.email || '',
+          telefone: data.telefone || '',
+          endereco: data.endereco || '',
+          conta_bancaria: data.conta_bancaria || '',
+        })
+        setRisco(data.risco as Risco)
+      }
+      setLoading(false)
+    }
+    fetchCedente()
+  }, [edit])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
 
-    const { error } = await supabase.from('cedentes').insert([
-      {
-        ...form,
-        risco,
-      },
-    ])
+    if (edit) {
+      // Atualiza
+      const { error } = await supabase
+        .from('cedentes')
+        .update({ ...form, risco })
+        .eq('id', edit)
 
-    if (error) {
-      console.error(error)
-      alert('❌ Erro ao salvar cedente!')
+      if (error) {
+        alert('❌ Erro ao atualizar cedente!')
+        console.error(error)
+      } else {
+        alert('✅ Cedente atualizado com sucesso!')
+        router.push('/cedentes')
+      }
     } else {
-      alert('✅ Cedente salvo com sucesso!')
-      setForm({
-        cnpj: '',
-        razao_social: '',
-        nome_fantasia: '',
-        email: '',
-        telefone: '',
-        endereco: '',
-        conta_bancaria: '',
-      })
-      setRisco('sem_risco')
+      // Novo cadastro
+      const { error } = await supabase.from('cedentes').insert([{ ...form, risco }])
+      if (error) {
+        alert('❌ Erro ao salvar cedente!')
+        console.error(error)
+      } else {
+        alert('✅ Cedente salvo com sucesso!')
+        router.push('/cedentes')
+      }
     }
+
+    setLoading(false)
   }
 
   return (
@@ -84,7 +118,6 @@ export default function NovoCedente() {
             className="w-full border rounded-lg px-3 py-2"
             value={form.email}
             onChange={e => setForm({ ...form, email: e.target.value })}
-            required
           />
         </div>
 
@@ -167,8 +200,12 @@ export default function NovoCedente() {
         </div>
 
         <div className="pt-2 flex items-center gap-2">
-          <button type="submit" className="px-4 py-2 rounded-xl bg-black text-white">
-            Salvar
+          <button
+            type="submit"
+            disabled={loading}
+            className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
+          >
+            {edit ? 'Atualizar' : 'Salvar'}
           </button>
           <button
             type="button"
