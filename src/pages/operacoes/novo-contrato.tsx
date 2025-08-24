@@ -1,86 +1,96 @@
 import { useEffect, useMemo, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
-import { cedentesMock } from '@/mocks/cedentes' // precisa ter: {id, razao (ou nome), cnpj}
+import { supabase } from '@/lib/supabaseClient'
 
 type TipoContrato = 'Cessão de crédito - Materiais' | 'Cessão de crédito - Serviços'
 
-type Contrato = {
+type Cedente = {
   id: string
-  cedenteId: string
-  cedenteNome: string
-  cnpjCedente: string
-  tipo: TipoContrato
-  limite: number
-  criadoEm: string
-  anexoNome?: string
-  anexoTamanho?: number
-  anexoPreviewUrl?: string // URL temporária (URL.createObjectURL)
+  razao_social: string
+  nome_fantasia?: string
+  cnpj: string
 }
 
-const LS_KEY = 'ops_contratos_v2'
+type Contrato = {
+  id: string
+  cedente_id: string
+  cedente?: Cedente
+  tipo: TipoContrato
+  limite: number
+  criado_em: string
+  anexo_url?: string
+}
 
-// utils
 const money = (v: number) =>
   v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export default function NovoContrato() {
-  // -------- LISTA --------
-  const [itens, setItens] = useState<Contrato[]>([])
+  const [contratos, setContratos] = useState<Contrato[]>([])
+  const [cedentes, setCedentes] = useState<Cedente[]>([])
   const [busca, setBusca] = useState('')
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY)
-      setItens(raw ? JSON.parse(raw) : [])
-    } catch {
-      setItens([])
-    }
-  }, [])
-
-  const persist = (next: Contrato[]) => {
-    setItens(next)
-    try {
-      localStorage.setItem(LS_KEY, JSON.stringify(next))
-    } catch {}
-  }
-
-  const remover = (id: string) => {
-    if (!confirm('Excluir contrato?')) return
-    const alvo = itens.find(i => i.id === id)
-    if (alvo?.anexoPreviewUrl) URL.revokeObjectURL(alvo.anexoPreviewUrl)
-    persist(itens.filter((i) => i.id !== id))
-  }
-
-  const itensFiltrados = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    if (!q) return itens
-    return itens.filter((i) =>
-      [i.cedenteNome, i.cnpjCedente, i.tipo].some((v) =>
-        v.toLowerCase().includes(q)
-      )
-    )
-  }, [itens, busca])
-
-  // -------- FORM (inicia fechado) --------
+  // FORM
   const [mostrarForm, setMostrarForm] = useState(false)
   const [cedenteId, setCedenteId] = useState('')
   const [tipo, setTipo] = useState<TipoContrato>('Cessão de crédito - Materiais')
   const [limite, setLimite] = useState<number | ''>('')
   const [arquivo, setArquivo] = useState<File | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const cedentesOpts = useMemo(
-    () =>
-      cedentesMock.map((c: any) => ({
-        value: c.id,
-        label: c.razao || c.nome || '—',
-        cnpj: c.cnpj,
-      })),
-    []
-  )
+  // Buscar cedentes
+  useEffect(() => {
+    const fetchCedentes = async () => {
+      const { data, error } = await supabase
+        .from('cedentes')
+        .select('id, razao_social, nome_fantasia, cnpj')
+        .order('razao_social')
+
+      if (!error && data) setCedentes(data)
+    }
+    fetchCedentes()
+  }, [])
+
+  // Buscar contratos
+  useEffect(() => {
+    const fetchContratos = async () => {
+      const { data, error } = await supabase
+        .from('contratos')
+        .select('id, tipo, limite, criado_em, anexo_url, cedentes(id, razao_social, nome_fantasia, cnpj)')
+        .order('criado_em', { ascending: false })
+
+      if (!error && data) {
+        setContratos(
+          data.map((c: any) => ({
+            id: c.id,
+            tipo: c.tipo,
+            limite: c.limite,
+            criado_em: c.criado_em,
+            anexo_url: c.anexo_url,
+            cedente_id: c.cedentes?.id,
+            cedente: c.cedentes,
+          }))
+        )
+      }
+    }
+    fetchContratos()
+  }, [])
+
   const cedenteSel = useMemo(
-    () => cedentesOpts.find((o) => o.value === cedenteId),
-    [cedentesOpts, cedenteId]
+    () => cedentes.find((c) => c.id === cedenteId),
+    [cedentes, cedenteId]
   )
+
+  const itensFiltrados = useMemo(() => {
+    const q = busca.trim().toLowerCase()
+    if (!q) return contratos
+    return contratos.filter((i) =>
+      [
+        i.cedente?.razao_social || '',
+        i.cedente?.cnpj || '',
+        i.tipo,
+      ].some((v) => v.toLowerCase().includes(q))
+    )
+  }, [contratos, busca])
 
   const limparForm = () => {
     setCedenteId('')
@@ -89,46 +99,68 @@ export default function NovoContrato() {
     setArquivo(null)
   }
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!cedenteId || limite === '' || Number(limite) <= 0) return
 
-    const previewUrl = arquivo ? URL.createObjectURL(arquivo) : undefined
+    setLoading(true)
 
-    const novo: Contrato = {
-      id: 'CT-' + Date.now(),
-      cedenteId,
-      cedenteNome: cedenteSel?.label || '',
-      cnpjCedente: cedenteSel?.cnpj || '',
-      tipo,
-      limite: Number(limite),
-      criadoEm: new Date().toISOString().slice(0, 10),
-      anexoNome: arquivo?.name,
-      anexoTamanho: arquivo?.size,
-      anexoPreviewUrl: previewUrl,
+    let anexoUrl
+    if (arquivo) {
+      const filePath = `contratos/${Date.now()}-${arquivo.name}`
+      const { error: uploadError } = await supabase.storage
+        .from('anexos')
+        .upload(filePath, arquivo)
+
+      if (!uploadError) {
+        const { data } = supabase.storage.from('anexos').getPublicUrl(filePath)
+        anexoUrl = data.publicUrl
+      }
     }
 
-    persist([novo, ...itens])
-    limparForm()
-    setMostrarForm(false)
-    alert('Contrato salvo!')
+    const { error } = await supabase.from('contratos').insert([
+      {
+        cedente_id: cedenteId,
+        tipo,
+        limite: Number(limite),
+        anexo_url: anexoUrl,
+      },
+    ])
+
+    if (error) {
+      alert('❌ Erro ao salvar contrato!')
+      console.error(error)
+    } else {
+      alert('✅ Contrato salvo com sucesso!')
+      window.location.reload() // recarregar lista
+    }
+
+    setLoading(false)
+  }
+
+  const remover = async (id: string) => {
+    if (!confirm('Excluir contrato?')) return
+    const { error } = await supabase.from('contratos').delete().eq('id', id)
+    if (error) {
+      alert('❌ Erro ao excluir')
+    } else {
+      setContratos((prev) => prev.filter((i) => i.id !== id))
+    }
   }
 
   return (
     <AdminLayout>
       <div className="max-w-5xl mx-auto space-y-6">
-        {/* Header da LISTA + botão de abrir/fechar formulário */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Contratos</h1>
           <button
-            onClick={() => setMostrarForm(v => !v)}
+            onClick={() => setMostrarForm((v) => !v)}
             className="px-4 py-2 rounded-xl bg-black text-white"
           >
             {mostrarForm ? 'Fechar' : 'Novo contrato'}
           </button>
         </div>
 
-        {/* Busca rápida */}
         <div className="flex gap-3">
           <input
             placeholder="Buscar por cedente, CNPJ ou tipo…"
@@ -138,7 +170,7 @@ export default function NovoContrato() {
           />
         </div>
 
-        {/* LISTA primeiro */}
+        {/* LISTA */}
         <div className="overflow-auto rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -164,35 +196,30 @@ export default function NovoContrato() {
               {itensFiltrados.map((i, idx) => (
                 <tr key={i.id} className="border-t">
                   <td className="px-4 py-2">{String(idx + 1).padStart(3, '0')}</td>
-                  <td className="px-4 py-2">{i.cedenteNome}</td>
-                  <td className="px-4 py-2">{i.cnpjCedente}</td>
+                  <td className="px-4 py-2">{i.cedente?.razao_social}</td>
+                  <td className="px-4 py-2">{i.cedente?.cnpj}</td>
                   <td className="px-4 py-2">{i.tipo}</td>
                   <td className="px-4 py-2">{money(i.limite)}</td>
                   <td className="px-4 py-2">
-                    {i.anexoNome ? (
-                      <div className="flex items-center gap-3">
-                        <span className="truncate max-w-[180px]" title={i.anexoNome}>
-                          {i.anexoNome}
-                        </span>
-                        {i.anexoPreviewUrl && (
-                          <a
-                            className="px-2 py-1 border rounded hover:bg-gray-50"
-                            href={i.anexoPreviewUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Ver
-                          </a>
-                        )}
-                      </div>
+                    {i.anexo_url ? (
+                      <a
+                        className="px-2 py-1 border rounded hover:bg-gray-50"
+                        href={i.anexo_url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Ver
+                      </a>
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="px-4 py-2">{i.criadoEm}</td>
+                  <td className="px-4 py-2">
+                    {new Date(i.criado_em).toLocaleDateString('pt-BR')}
+                  </td>
                   <td className="px-4 py-2">
                     <button
-                      className="px-2 py-1 border rounded text-red-600"
+                      className="px-2 py-1 border rounded text-red-600 hover:bg-red-50"
                       onClick={() => remover(i.id)}
                     >
                       Excluir
@@ -204,7 +231,7 @@ export default function NovoContrato() {
           </table>
         </div>
 
-        {/* FORM: só aparece ao clicar no botão */}
+        {/* FORM */}
         {mostrarForm && (
           <div className="border rounded-xl p-4 bg-white">
             <h2 className="text-lg font-medium mb-3">Cadastrar contrato</h2>
@@ -219,9 +246,9 @@ export default function NovoContrato() {
                   required
                 >
                   <option value="">Selecione…</option>
-                  {cedentesOpts.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label} — {o.cnpj}
+                  {cedentes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.razao_social} — {c.cnpj}
                     </option>
                   ))}
                 </select>
@@ -276,10 +303,19 @@ export default function NovoContrato() {
               </div>
 
               <div className="sm:col-span-2 pt-2 flex gap-3">
-                <button className="px-4 py-2 rounded-xl bg-black text-white">Salvar</button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-50"
+                >
+                  Salvar
+                </button>
                 <button
                   type="button"
-                  onClick={() => { limparForm(); setMostrarForm(false) }}
+                  onClick={() => {
+                    limparForm()
+                    setMostrarForm(false)
+                  }}
                   className="px-4 py-2 rounded-xl border"
                 >
                   Cancelar
