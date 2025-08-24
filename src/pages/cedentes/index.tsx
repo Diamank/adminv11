@@ -3,7 +3,7 @@ import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
 import Link from 'next/link'
 import RiskBadge from '@/components/RiskBadge'
-import { supabase } from '@/lib/supabaseClient' // ajuste se estiver como supabaseClient
+import { supabase } from '@/lib/supabase' // ou '@/lib/supabaseClient' se não renomeou
 
 type Cedente = {
   id: string
@@ -24,6 +24,20 @@ function normalize(str: string = '') {
 }
 function onlyDigits(str: string = '') {
   return str.replace(/\D/g, '')
+}
+
+// Converter risco do banco para RiskBadge
+function toRiskLevel(risco: string) {
+  switch (risco) {
+    case 'sem_risco':
+      return 'baixo'
+    case 'moderado':
+      return 'moderado'
+    case 'risco':
+      return 'alto'
+    default:
+      return 'nao_avaliado'
+  }
 }
 
 // Ícone lupa
@@ -82,13 +96,13 @@ export default function Cedentes() {
     c.endereco || '—',
     c.email || c.telefone || '—',
     <span key={`risk-${c.id}`} title={c.risco}>
-      <RiskBadge level={c.risco as any} />
+      <RiskBadge level={toRiskLevel(c.risco)} />
     </span>,
     new Date(c.created_at).toLocaleDateString('pt-BR'),
     <div key={`actions-${c.id}`} className="flex gap-2">
       <Link
         href={`/cedentes/novo?edit=${c.id}`}
-        className="px-2 py-1 rounded-lg text-sm border border-blue-500 text-blue-600 hover:bg-blue-50"
+        className="px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-600 hover:bg-blue-200 transition"
       >
         Editar
       </Link>
@@ -105,7 +119,7 @@ export default function Cedentes() {
             }
           }
         }}
-        className="px-2 py-1 rounded-lg text-sm border border-red-500 text-red-600 hover:bg-red-50"
+        className="px-3 py-1 rounded-full text-sm bg-red-100 text-red-600 hover:bg-red-200 transition"
       >
         Excluir
       </button>
