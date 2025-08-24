@@ -1,9 +1,21 @@
 import AdminLayout from '@/components/AdminLayout'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '@/lib/supabaseClient' // ajuste para supabaseClient se você manteve esse nome
+import { supabase } from '@/lib/supabaseClient'
+
 
 type Risco = 'sem_risco' | 'moderado' | 'risco'
+
+// Função para aplicar máscara de CNPJ
+function formatCNPJ(value: string) {
+  return value
+    .replace(/\D/g, '') // mantém só números
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2')
+    .slice(0, 18)
+}
 
 export default function NovoCedente() {
   const router = useRouter()
@@ -31,7 +43,7 @@ export default function NovoCedente() {
         console.error(error)
       } else if (data) {
         setForm({
-          cnpj: data.cnpj || '',
+          cnpj: formatCNPJ(data.cnpj || ''),
           razao_social: data.razao_social || '',
           nome_fantasia: data.nome_fantasia || '',
           email: data.email || '',
@@ -50,11 +62,14 @@ export default function NovoCedente() {
     e.preventDefault()
     setLoading(true)
 
+    // remove máscara antes de salvar no banco
+    const cleanCNPJ = form.cnpj.replace(/\D/g, '')
+
     if (edit) {
       // Atualiza
       const { error } = await supabase
         .from('cedentes')
-        .update({ ...form, risco })
+        .update({ ...form, cnpj: cleanCNPJ, risco })
         .eq('id', edit)
 
       if (error) {
@@ -66,7 +81,7 @@ export default function NovoCedente() {
       }
     } else {
       // Novo cadastro
-      const { error } = await supabase.from('cedentes').insert([{ ...form, risco }])
+      const { error } = await supabase.from('cedentes').insert([{ ...form, cnpj: cleanCNPJ, risco }])
       if (error) {
         alert('❌ Erro ao salvar cedente!')
         console.error(error)
@@ -87,7 +102,7 @@ export default function NovoCedente() {
           <input
             className="w-full border rounded-lg px-3 py-2"
             value={form.cnpj}
-            onChange={e => setForm({ ...form, cnpj: e.target.value })}
+            onChange={e => setForm({ ...form, cnpj: formatCNPJ(e.target.value) })}
             required
           />
         </div>
