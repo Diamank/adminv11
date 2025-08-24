@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabaseClient'
 
 type TipoContrato = 'Materiais' | 'Serviços'
 
