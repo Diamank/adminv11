@@ -1,7 +1,7 @@
 import AdminLayout from '@/components/AdminLayout'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
-import { supabase } from '@/lib/supabase' // ajuste para supabaseClient se você manteve esse nome
+import { supabase } from '@/lib/supabaseClient' // ajuste para supabaseClient se você manteve esse nome
 
 type Risco = 'sem_risco' | 'moderado' | 'risco'
 
