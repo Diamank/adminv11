@@ -42,13 +42,14 @@ export default function Cedentes() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [data, setData] = useState<Cedente[]>([])
 
-  // Buscar cedentes no Supabase
+  // Buscar cedentes do Supabase
   useEffect(() => {
     const fetchData = async () => {
       const { data, error } = await supabase
         .from('cedentes')
         .select('*')
         .order('created_at', { ascending: false })
+
       if (error) console.error(error)
       else setData(data || [])
     }
@@ -59,7 +60,7 @@ export default function Cedentes() {
     if (showSearch) inputRef.current?.focus()
   }, [showSearch])
 
-  // Filtro local (igual ao sacado)
+  // Filtro de busca
   const filtered = useMemo(() => {
     const q = query.trim()
     if (!q) return data
