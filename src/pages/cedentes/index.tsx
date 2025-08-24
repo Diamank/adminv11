@@ -3,7 +3,7 @@ import AdminLayout from '@/components/AdminLayout'
 import Table from '@/components/Table'
 import Link from 'next/link'
 import RiskBadge from '@/components/RiskBadge'
-import { supabase } from '@/lib/supabase' // ou '@/lib/supabaseClient' se não renomeou
+import { supabase } from '@/lib/supabaseClient' // ou '@/lib/supabaseClient' se não renomeou
 
 type Cedente = {
   id: string
