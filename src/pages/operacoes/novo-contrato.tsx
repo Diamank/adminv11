@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import AdminLayout from '@/components/AdminLayout'
 import { supabase } from '@/lib/supabaseClient'
 
-type TipoContrato = 'Cessão de crédito - Materiais' | 'Cessão de crédito - Serviços'
+type TipoContrato = 'Materiais' | 'Serviços'
 
 type Cedente = {
   id: string
@@ -32,7 +32,7 @@ export default function NovoContrato() {
   // FORM
   const [mostrarForm, setMostrarForm] = useState(false)
   const [cedenteId, setCedenteId] = useState('')
-  const [tipo, setTipo] = useState<TipoContrato>('Cessão de crédito - Materiais')
+  const [tipo, setTipo] = useState<TipoContrato>('Materiais')
   const [limite, setLimite] = useState<number | ''>('')
   const [arquivo, setArquivo] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
@@ -94,7 +94,7 @@ export default function NovoContrato() {
 
   const limparForm = () => {
     setCedenteId('')
-    setTipo('Cessão de crédito - Materiais')
+    setTipo('Materiais')
     setLimite('')
     setArquivo(null)
   }
@@ -132,7 +132,7 @@ export default function NovoContrato() {
       console.error(error)
     } else {
       alert('✅ Contrato salvo com sucesso!')
-      window.location.reload() // recarregar lista
+      window.location.reload()
     }
 
     setLoading(false)
@@ -198,7 +198,11 @@ export default function NovoContrato() {
                   <td className="px-4 py-2">{String(idx + 1).padStart(3, '0')}</td>
                   <td className="px-4 py-2">{i.cedente?.razao_social}</td>
                   <td className="px-4 py-2">{i.cedente?.cnpj}</td>
-                  <td className="px-4 py-2">{i.tipo}</td>
+                  <td className="px-4 py-2">
+                    {i.tipo === 'Materiais'
+                      ? 'Cessão de crédito - Materiais'
+                      : 'Cessão de crédito - Serviços'}
+                  </td>
                   <td className="px-4 py-2">{money(i.limite)}</td>
                   <td className="px-4 py-2">
                     {i.anexo_url ? (
@@ -270,8 +274,8 @@ export default function NovoContrato() {
                   value={tipo}
                   onChange={(e) => setTipo(e.target.value as TipoContrato)}
                 >
-                  <option value="Cessão de crédito - Materiais">Cessão de crédito - Materiais</option>
-                  <option value="Cessão de crédito - Serviços">Cessão de crédito - Serviços</option>
+                  <option value="Materiais">Cessão de crédito - Materiais</option>
+                  <option value="Serviços">Cessão de crédito - Serviços</option>
                 </select>
               </div>
 
