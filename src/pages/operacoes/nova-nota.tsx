@@ -1,531 +1,193 @@
-import React, { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Fragment } from 'react'
 import AdminLayout from '@/components/AdminLayout'
-import { cedentesMock } from '@/mocks/cedentes'
-import { sacadosMock } from '@/mocks/sacados'
+import { supabase } from '@/lib/supabase'
 
-/* ================== UploadBox (drag&drop + estilizado) ================== */
-function UploadBox({
-  label,
-  accept,
-  file,
-  onChange,
-  helper,
-}: {
-  label: string
-  accept?: string
-  file: File | null
-  onChange: (f: File | null) => void
-  helper?: string
-}) {
-  const inputId = `up-${label.replace(/\W+/g, '').toLowerCase()}`
-  const onSelect = (e: React.ChangeEvent<HTMLInputElement>) =>
-    onChange(e.target.files?.[0] ?? null)
-  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const f = e.dataTransfer.files?.[0]
-    if (!f) return
-    onChange(f)
-  }
-  const human = (n: number) =>
-    n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / (1024 * 1024)).toFixed(2)} MB`
-
-  return (
-    <div className="space-y-2">
-      <label htmlFor={inputId} className="block text-sm mb-1">{label}</label>
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-        className="group relative w-full rounded-2xl border-2 border-dashed p-4 bg-white hover:border-gray-400 transition border-gray-300"
-      >
-        {!file ? (
-          <label htmlFor={inputId} className="flex cursor-pointer items-center gap-3">
-            <svg width="28" height="28" viewBox="0 0 24 24" className="opacity-70">
-              <path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm1 7H8V7h7z"/>
-            </svg>
-            <div className="flex-1">
-              <div className="text-sm font-medium">Arraste e solte o arquivo aqui</div>
-              <div className="text-xs text-gray-500">
-                {helper ?? <>ou clique para escolher (aceita {accept || 'arquivos'})</>}
-              </div>
-            </div>
-          </label>
-        ) : (
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate font-medium">{file.name}</div>
-              <div className="text-xs text-gray-500">{human(file.size)}</div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <label htmlFor={inputId} className="px-3 py-1.5 text-sm rounded-lg border cursor-pointer hover:bg-gray-50">
-                Trocar
-              </label>
-              <button
-                type="button"
-                onClick={() => onChange(null)}
-                className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50"
-              >
-                Remover
-              </button>
-            </div>
-          </div>
-        )}
-        <input id={inputId} type="file" accept={accept} className="hidden" onChange={onSelect} />
-      </div>
-    </div>
-  )
+type Cedente = {
+  id: string
+  razao_social: string
+  cnpj: string
 }
-/* ======================================================================= */
 
-type AnexoTipo = 'nota_fiscal' | 'boleto' | 'aditivo'
-type Anexo = { tipo: AnexoTipo; nome: string; tamanho: number; previewUrl?: string }
+type Sacado = {
+  id: string
+  razao_social: string
+  cnpj: string
+}
+
+type Contrato = {
+  id: string
+  cedente_id: string
+  tipo: string
+  limite: number
+}
 
 type Nota = {
   id: string
-  cedenteId: string
-  cedenteNome: string
-  cnpjCedente: string
-  sacadoId: string
-  sacadoNome: string
-  cnpjSacado: string
   numero: string
-  emissao: string // yyyy-mm-dd
-  vencimento: string // yyyy-mm-dd
-  dias: number
-  valor: number
-  taxaMes: number // % a.m.
-  tarifaFixa: number // R$
-  taxaAdmPerc: number // %
-  iofPerc: number // %
-  desconto: number
-  liquidoCedente: number
-  valorAReceber: number
-  anexos: Anexo[]
-  // refs para atualizar/limpar lançamentos relacionados
-  refs?: {
-    crIds: string[] // contas a receber
-    cpIds: string[] // contas a pagar
-  }
-}
-
-type LancamentoCR = {
-  id: string
-  tipo: 'cr'
-  notaId: string
-  titulo: string
-  contraparte: string // sacado
+  emissao: string
   vencimento: string
   valor: number
-  pago: boolean
+  taxa_mes: number
+  tarifa_fixa: number
+  taxa_adm_perc: number
+  iof_perc: number
+  desconto: number
+  liquido_cedente: number
+  valor_a_receber: number
+  created_at: string
+  cedentes?: Cedente
+  sacados?: Sacado
+  contratos?: Contrato
 }
 
-type LancamentoCP = {
-  id: string
-  tipo: 'cp'
-  notaId: string
-  titulo: string
-  data: string
-  valor: number
-  pago: boolean
-}
-
-const LS_NOTAS = 'ops_notas_v3'
-const LS_CR = 'fin_cr_v1'
-const LS_CP = 'fin_cp_v1'
-
-const money = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-const diffDias = (a: string, b: string) => {
-  if (!a || !b) return 0
-  const d1 = new Date(a + 'T00:00:00')
-  const d2 = new Date(b + 'T00:00:00')
-  return Math.max(0, Math.round((+d2 - +d1) / (1000 * 60 * 60 * 24)))
-}
-
-/* ============================ Helpers UI ============================ */
-function InputMoney(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">R$</span>
-      <input {...props} className={'w-full border rounded-lg pl-9 pr-3 py-2 bg-white ' + (props.className || '')} />
-    </div>
-  )
-}
-function InputPercent(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return (
-    <div className="relative">
-      <input {...props} className={'w-full border rounded-lg pl-3 pr-9 py-2 bg-white ' + (props.className || '')} />
-      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">%</span>
-    </div>
-  )
-}
-/* ==================================================================== */
-
-/* ============================ Ledger helpers ============================ */
-function loadCR(): LancamentoCR[] {
-  try { return JSON.parse(localStorage.getItem(LS_CR) || '[]') } catch { return [] }
-}
-function loadCP(): LancamentoCP[] {
-  try { return JSON.parse(localStorage.getItem(LS_CP) || '[]') } catch { return [] }
-}
-function saveCR(data: LancamentoCR[]) {
-  try { localStorage.setItem(LS_CR, JSON.stringify(data)) } catch {}
-}
-function saveCP(data: LancamentoCP[]) {
-  try { localStorage.setItem(LS_CP, JSON.stringify(data)) } catch {}
-}
-
-function uid(prefix: string) {
-  return `${prefix}-${Math.random().toString(36).slice(2, 8)}${Date.now()}`
-}
-
-/** Cria os lançamentos de CR/CP para a nota e retorna os ids criados */
-function createLedgerEntries(n: Nota) {
-  const cr = loadCR()
-  const cp = loadCP()
-
-  // Contas a Receber — Valor nominal, no vencimento
-  const crItem: LancamentoCR = {
-    id: uid('CR'),
-    tipo: 'cr',
-    notaId: n.id,
-    titulo: `NF ${n.numero} — ${n.sacadoNome}`,
-    contraparte: n.sacadoNome,
-    vencimento: n.vencimento,
-    valor: n.valorAReceber,
-    pago: false,
-  }
-  cr.unshift(crItem)
-
-  // Contas a Pagar — Taxas
-  const cpItems: LancamentoCP[] = []
-
-  if (n.tarifaFixa > 0) {
-    cpItems.push({
-      id: uid('CP'),
-      tipo: 'cp',
-      notaId: n.id,
-      titulo: `Tarifa fixa NF ${n.numero}`,
-      data: n.emissao,
-      valor: n.tarifaFixa,
-      pago: false,
-    })
-  }
-  const taxaAdm = n.valor * (n.taxaAdmPerc / 100)
-  if (taxaAdm > 0) {
-    cpItems.push({
-      id: uid('CP'),
-      tipo: 'cp',
-      notaId: n.id,
-      titulo: `Taxa adm. NF ${n.numero}`,
-      data: n.emissao,
-      valor: taxaAdm,
-      pago: false,
-    })
-  }
-  const iof = n.valor * (n.iofPerc / 100)
-  if (iof > 0) {
-    cpItems.push({
-      id: uid('CP'),
-      tipo: 'cp',
-      notaId: n.id,
-      titulo: `IOF NF ${n.numero}`,
-      data: n.emissao,
-      valor: iof,
-      pago: false,
-    })
-  }
-  const custoFin = n.valor * (n.taxaMes / 100) * (n.dias / 30)
-  if (custoFin > 0) {
-    cpItems.push({
-      id: uid('CP'),
-      tipo: 'cp',
-      notaId: n.id,
-      titulo: `Custo financeiro NF ${n.numero}`,
-      data: n.vencimento, // reconhece no vencimento
-      valor: custoFin,
-      pago: false,
-    })
-  }
-
-  saveCR([crItem, ...cr])
-  saveCP([...cpItems, ...cp])
-
-  return { crIds: [crItem.id], cpIds: cpItems.map(i => i.id) }
-}
-
-/** Atualiza os lançamentos existentes para refletir alterações na nota */
-function updateLedgerEntries(n: Nota) {
-  if (!n.refs) return
-  const cr = loadCR()
-  const cp = loadCP()
-
-  // atualizar CR (assume 1 por nota)
-  for (const id of n.refs.crIds) {
-    const i = cr.findIndex(x => x.id === id)
-    if (i >= 0) {
-      cr[i] = {
-        ...cr[i],
-        titulo: `NF ${n.numero} — ${n.sacadoNome}`,
-        contraparte: n.sacadoNome,
-        vencimento: n.vencimento,
-        valor: n.valorAReceber,
-      }
-    }
-  }
-
-  // recalcula valores
-  const taxaAdm = n.valor * (n.taxaAdmPerc / 100)
-  const iof = n.valor * (n.iofPerc / 100)
-  const custoFin = n.valor * (n.taxaMes / 100) * (n.dias / 30)
-
-  for (const id of n.refs.cpIds) {
-    const j = cp.findIndex(x => x.id === id)
-    if (j < 0) continue
-    const titulo = cp[j].titulo
-    if (titulo.startsWith('Tarifa fixa')) {
-      cp[j] = { ...cp[j], data: n.emissao, valor: n.tarifaFixa }
-    } else if (titulo.startsWith('Taxa adm.')) {
-      cp[j] = { ...cp[j], data: n.emissao, valor: taxaAdm }
-    } else if (titulo.startsWith('IOF')) {
-      cp[j] = { ...cp[j], data: n.emissao, valor: iof }
-    } else if (titulo.startsWith('Custo financeiro')) {
-      cp[j] = { ...cp[j], data: n.vencimento, valor: custoFin }
-    }
-  }
-
-  saveCR(cr)
-  saveCP(cp)
-}
-
-/** Remove todos os lançamentos vinculados à nota */
-function deleteLedgerEntries(n: Nota) {
-  if (!n.refs) return
-  const cr = loadCR().filter(x => !n.refs!.crIds.includes(x.id))
-  const cp = loadCP().filter(x => !n.refs!.cpIds.includes(x.id))
-  saveCR(cr)
-  saveCP(cp)
-}
-/* ======================================================================= */
+const money = (v: number | null | undefined) =>
+  (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export default function NovaNota() {
-  // LISTA
-  const [itens, setItens] = useState<Nota[]>([])
+  const [notas, setNotas] = useState<Nota[]>([])
+  const [cedentes, setCedentes] = useState<Cedente[]>([])
+  const [sacados, setSacados] = useState<Sacado[]>([])
+  const [contratos, setContratos] = useState<Contrato[]>([])
+
+  // busca
   const [busca, setBusca] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  // EDIÇÃO
-  const [editingId, setEditingId] = useState<string | null>(null)
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_NOTAS)
-      setItens(raw ? JSON.parse(raw) : [])
-    } catch {
-      setItens([])
-    }
-  }, [])
-
-  const persistNotas = (next: Nota[]) => {
-    setItens(next)
-    try { localStorage.setItem(LS_NOTAS, JSON.stringify(next)) } catch {}
-  }
-
-  const remover = (id: string) => {
-    if (!confirm('Excluir nota?')) return
-    const alvo = itens.find((n) => n.id === id)
-    alvo?.anexos?.forEach((a) => { if (a.previewUrl) URL.revokeObjectURL(a.previewUrl) })
-    if (alvo) deleteLedgerEntries(alvo)
-    persistNotas(itens.filter((n) => n.id !== id))
-    if (expandedId === id) setExpandedId(null)
-    if (editingId === id) cancelarEdicao()
-  }
-
-  const itensFiltrados = useMemo(() => {
-    const q = busca.trim().toLowerCase()
-    if (!q) return itens
-    return itens.filter((n) =>
-      [n.numero, n.cedenteNome, n.sacadoNome, n.cnpjCedente, n.cnpjSacado].some((v) =>
-        v.toLowerCase().includes(q)
-      )
-    )
-  }, [itens, busca])
-
-  // FORM
+  // form
   const [mostrarForm, setMostrarForm] = useState(false)
+  const [contratoId, setContratoId] = useState('')
   const [cedenteId, setCedenteId] = useState('')
   const [sacadoId, setSacadoId] = useState('')
   const [numero, setNumero] = useState('')
   const [emissao, setEmissao] = useState('')
   const [vencimento, setVencimento] = useState('')
   const [valor, setValor] = useState<number | ''>('')
-  const [taxaMes, setTaxaMes] = useState<number | ''>('')        // % a.m.
-  const [tarifaFixa, setTarifaFixa] = useState<number | ''>('')  // R$
-  const [taxaAdmPerc, setTaxaAdmPerc] = useState<number | ''>('')// %
-  const [iofPerc, setIofPerc] = useState<number | ''>('')        // %
+  const [taxaMes, setTaxaMes] = useState<number | ''>('')
+  const [tarifaFixa, setTarifaFixa] = useState<number | ''>('')
+  const [taxaAdmPerc, setTaxaAdmPerc] = useState<number | ''>('')
+  const [iofPerc, setIofPerc] = useState<number | ''>('')
 
-  const cedente = useMemo(() => cedentesMock.find((c) => c.id === cedenteId), [cedenteId])
-  const sacado = useMemo(() => sacadosMock.find((s) => s.id === sacadoId), [sacadoId])
+  const [limiteContrato, setLimiteContrato] = useState<number>(0)
+  const [usadoContrato, setUsadoContrato] = useState<number>(0)
 
-  const dias = useMemo(() => diffDias(emissao, vencimento), [emissao, vencimento])
-  const calc = useMemo(() => {
-    const v = typeof valor === 'number' ? valor : 0
-    const t = typeof taxaMes === 'number' ? taxaMes : 0
-    const fix = typeof tarifaFixa === 'number' ? tarifaFixa : 0
-    const adm = typeof taxaAdmPerc === 'number' ? taxaAdmPerc : 0
-    const iof = typeof iofPerc === 'number' ? iofPerc : 0
+  // fetch inicial
+  useEffect(() => {
+    const fetchAll = async () => {
+      const { data: ced } = await supabase.from('cedentes').select('id, razao_social, cnpj')
+      if (ced) setCedentes(ced)
 
+      const { data: sac } = await supabase.from('sacados').select('id, razao_social, cnpj')
+      if (sac) setSacados(sac)
+
+      const { data: ct } = await supabase.from('contratos').select('id, cedente_id, tipo, limite')
+      if (ct) setContratos(ct)
+
+      const { data: nt } = await supabase
+        .from('notas')
+        .select('*, cedentes(id, razao_social, cnpj), sacados(id, razao_social, cnpj), contratos(id, limite)')
+        .order('created_at', { ascending: false })
+
+      if (nt) setNotas(nt as any)
+    }
+    fetchAll()
+  }, [])
+
+  // quando seleciona contrato, calcula saldo
+  useEffect(() => {
+    const contrato = contratos.find(c => c.id === contratoId)
+    if (!contrato) {
+      setLimiteContrato(0)
+      setUsadoContrato(0)
+      return
+    }
+    setLimiteContrato(contrato.limite)
+
+    const soma = notas
+      .filter(n => n.contratos?.id === contrato.id)
+      .reduce((acc, n) => acc + (n.valor || 0), 0)
+
+    setUsadoContrato(soma)
+  }, [contratoId, notas, contratos])
+
+  const disponivel = limiteContrato - usadoContrato
+
+  // salvar
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!contratoId || !cedenteId || !sacadoId || !numero || !emissao || !vencimento || valor === '' || taxaMes === '') {
+      alert('Preencha todos os campos obrigatórios!')
+      return
+    }
+
+    if (Number(valor) > disponivel) {
+      alert('❌ Valor da nota ultrapassa o limite disponível do contrato!')
+      return
+    }
+
+    const v = Number(valor)
+    const t = Number(taxaMes)
+    const fix = Number(tarifaFixa || 0)
+    const adm = Number(taxaAdmPerc || 0)
+    const iof = Number(iofPerc || 0)
+
+    const dias = Math.max(
+      0,
+      Math.round((+new Date(vencimento) - +new Date(emissao)) / (1000 * 60 * 60 * 24))
+    )
     const descontoFinanceiro = v * (t / 100) * (dias / 30)
     const descontoAdm = v * (adm / 100)
     const descontoIof = v * (iof / 100)
     const descontoTotal = descontoFinanceiro + fix + descontoAdm + descontoIof
     const liquido = Math.max(0, v - descontoTotal)
-    const receber = v
 
-    return { descontoFinanceiro, fix, descontoAdm, descontoIof, descontoTotal, liquido, receber }
-  }, [valor, taxaMes, dias, tarifaFixa, taxaAdmPerc, iofPerc])
+    const { error } = await supabase.from('notas').insert([
+      {
+        contrato_id: contratoId,
+        cedente_id: cedenteId,
+        sacado_id: sacadoId,
+        numero,
+        emissao,
+        vencimento,
+        valor: v,
+        taxa_mes: t,
+        tarifa_fixa: fix,
+        taxa_adm_perc: adm,
+        iof_perc: iof,
+        desconto: descontoTotal,
+        liquido_cedente: liquido,
+        valor_a_receber: v,
+      },
+    ])
 
-  // anexos
-  const [nfFile, setNfFile] = useState<File | null>(null)
-  const [boletoFile, setBoletoFile] = useState<File | null>(null)
-  const [aditivoFile, setAditivoFile] = useState<File | null>(null)
-
-  const limparForm = () => {
-    setCedenteId(''); setSacadoId(''); setNumero('')
-    setEmissao(''); setVencimento(''); setValor('')
-    setTaxaMes(''); setTarifaFixa(''); setTaxaAdmPerc(''); setIofPerc('')
-    setNfFile(null); setBoletoFile(null); setAditivoFile(null)
-  }
-
-  const iniciarEdicao = (nota: Nota) => {
-    setEditingId(nota.id)
-    setMostrarForm(true)
-    setExpandedId(nota.id)
-
-    setCedenteId(nota.cedenteId)
-    setSacadoId(nota.sacadoId)
-    setNumero(nota.numero)
-    setEmissao(nota.emissao)
-    setVencimento(nota.vencimento)
-    setValor(nota.valor)
-    setTaxaMes(nota.taxaMes)
-    setTarifaFixa(nota.tarifaFixa)
-    setTaxaAdmPerc(nota.taxaAdmPerc)
-    setIofPerc(nota.iofPerc)
-
-    setNfFile(null); setBoletoFile(null); setAditivoFile(null)
-  }
-
-  const cancelarEdicao = () => {
-    setEditingId(null)
-    limparForm()
-    setMostrarForm(false)
-  }
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!cedenteId || !sacadoId || !numero || !emissao || !vencimento || valor === '' || taxaMes === '') return
-
-    const novosAnexos: Anexo[] = []
-    if (nfFile) novosAnexos.push({ tipo: 'nota_fiscal', nome: nfFile.name, tamanho: nfFile.size, previewUrl: URL.createObjectURL(nfFile) })
-    if (boletoFile) novosAnexos.push({ tipo: 'boleto', nome: boletoFile.name, tamanho: boletoFile.size, previewUrl: URL.createObjectURL(boletoFile) })
-    if (aditivoFile) novosAnexos.push({ tipo: 'aditivo', nome: aditivoFile.name, tamanho: aditivoFile.size, previewUrl: URL.createObjectURL(aditivoFile) })
-
-    if (editingId) {
-      // Atualização
-      const atualizada = itens.map(n => {
-        if (n.id !== editingId) return n
-        const next: Nota = {
-          ...n,
-          cedenteId,
-          cedenteNome: (cedentesMock.find(c => c.id === cedenteId) as any)?.razao || (cedentesMock.find(c => c.id === cedenteId) as any)?.nome || '',
-          cnpjCedente: (cedentesMock.find(c => c.id === cedenteId) as any)?.cnpj || '',
-          sacadoId,
-          sacadoNome: (sacadosMock.find(s => s.id === sacadoId) as any)?.razao || (sacadosMock.find(s => s.id === sacadoId) as any)?.nome || '',
-          cnpjSacado: (sacadosMock.find(s => s.id === sacadoId) as any)?.cnpj || '',
-          numero,
-          emissao, vencimento,
-          dias,
-          valor: Number(valor),
-          taxaMes: Number(taxaMes),
-          tarifaFixa: Number(tarifaFixa || 0),
-          taxaAdmPerc: Number(taxaAdmPerc || 0),
-          iofPerc: Number(iofPerc || 0),
-          desconto: calc.descontoTotal,
-          liquidoCedente: calc.liquido,
-          valorAReceber: calc.receber,
-          anexos: [...n.anexos], // mantém os atuais, substitui os enviados
-        }
-        for (const a of novosAnexos) {
-          const idx = next.anexos.findIndex(x => x.tipo === a.tipo)
-          if (idx >= 0) {
-            if (next.anexos[idx].previewUrl) URL.revokeObjectURL(next.anexos[idx].previewUrl!)
-            next.anexos[idx] = a
-          } else {
-            next.anexos.push(a)
-          }
-        }
-        // Atualiza lançamentos financeiros
-        updateLedgerEntries({ ...next, refs: n.refs })
-        return next
-      })
-      persistNotas(atualizada)
-      const keepId = editingId
-      cancelarEdicao()
-      setExpandedId(keepId)
-      alert('Nota atualizada!')
-      return
+    if (error) {
+      alert('Erro ao salvar nota!')
+      console.error(error)
+    } else {
+      alert('✅ Nota salva com sucesso!')
+      window.location.reload()
     }
-
-    // Nova
-    const novo: Nota = {
-      id: 'NF-' + Date.now(),
-      cedenteId,
-      cedenteNome: (cedentesMock.find(c => c.id === cedenteId) as any)?.razao || (cedentesMock.find(c => c.id === cedenteId) as any)?.nome || '',
-      cnpjCedente: (cedentesMock.find(c => c.id === cedenteId) as any)?.cnpj || '',
-      sacadoId,
-      sacadoNome: (sacadosMock.find(s => s.id === sacadoId) as any)?.razao || (sacadosMock.find(s => s.id === sacadoId) as any)?.nome || '',
-      cnpjSacado: (sacadosMock.find(s => s.id === sacadoId) as any)?.cnpj || '',
-      numero,
-      emissao, vencimento,
-      dias,
-      valor: Number(valor),
-      taxaMes: Number(taxaMes),
-      tarifaFixa: Number(tarifaFixa || 0),
-      taxaAdmPerc: Number(taxaAdmPerc || 0),
-      iofPerc: Number(iofPerc || 0),
-      desconto: calc.descontoTotal,
-      liquidoCedente: calc.liquido,
-      valorAReceber: calc.receber,
-      anexos: novosAnexos,
-    }
-
-    // cria lançamentos financeiros e salva refs
-    const refs = createLedgerEntries(novo)
-    const novoComRefs: Nota = { ...novo, refs }
-
-    persistNotas([novoComRefs, ...itens])
-    limparForm()
-    setMostrarForm(false)
-    setExpandedId(novoComRefs.id)
-    alert('Nota salva e lançamentos criados em Contas a Pagar / Receber!')
   }
+
+  const itensFiltrados = useMemo(() => {
+    const q = busca.trim().toLowerCase()
+    if (!q) return notas
+    return notas.filter((n) =>
+      [n.numero, n.cedentes?.razao_social, n.sacados?.razao_social, n.cedentes?.cnpj, n.sacados?.cnpj]
+        .some(v => (v || '').toLowerCase().includes(q))
+    )
+  }, [notas, busca])
 
   return (
     <AdminLayout>
       <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header + botão abrir/fechar formulário */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Notas</h1>
           <button
-            onClick={() =>
-              setMostrarForm((prev) => {
-                const next = !prev
-                if (!next) cancelarEdicao()
-                return next
-              })
-            }
+            onClick={() => setMostrarForm(v => !v)}
             className="px-4 py-2 rounded-xl bg-black text-white"
           >
-            {mostrarForm ? 'Fechar' : editingId ? 'Fechar' : 'Nova nota'}
+            {mostrarForm ? 'Fechar' : 'Nova nota'}
           </button>
         </div>
 
@@ -539,132 +201,54 @@ export default function NovaNota() {
           />
         </div>
 
-        {/* LISTA (Resumo enxuto) */}
+        {/* LISTA */}
         <div className="overflow-hidden rounded-xl border bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left">
-                <th className="px-4 py-2 w-10"></th>
                 <th className="px-4 py-2">NF</th>
                 <th className="px-4 py-2">Cedente</th>
                 <th className="px-4 py-2">Sacado</th>
-                <th className="px-4 py-2">Emissão</th>
-                <th className="px-4 py-2">Venc.</th>
-                <th className="px-4 py-2">Taxa (% a.m.)</th>
-                <th className="px-4 py-2">Desconto</th>
-                <th className="px-4 py-2">A Receber</th>
-                <th className="px-4 py-2">Ações</th>
+                <th className="px-4 py-2">Valor</th>
+                <th className="px-4 py-2">Líquido</th>
+                <th className="px-4 py-2">Criada em</th>
               </tr>
             </thead>
             <tbody>
               {itensFiltrados.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-6 text-center text-gray-500">Sem registros.</td>
+                  <td colSpan={6} className="px-4 py-6 text-center text-gray-500">Sem registros.</td>
                 </tr>
               )}
-
-              {itensFiltrados.map((n) => {
-                const open = expandedId === n.id
-                return (
-                  <Fragment key={n.id}>
-                    <tr
-                      className={'border-t cursor-pointer hover:bg-gray-50 ' + (open ? 'bg-gray-50' : '')}
-                      onClick={() => setExpandedId(open ? null : n.id)}
-                    >
-                      <td className="px-4 py-2">
-                        <span className={'inline-block transition-transform ' + (open ? 'rotate-90' : '')}>▶</span>
-                      </td>
-                      <td className="px-4 py-2 whitespace-nowrap">{n.numero}</td>
-
-                      <td className="px-4 py-2">
-                        <div className="max-w-[180px] truncate" title={n.cedenteNome}>{n.cedenteNome}</div>
-                      </td>
-
-                      <td className="px-4 py-2">
-                        <div className="max-w-[180px] truncate" title={n.sacadoNome}>{n.sacadoNome}</div>
-                      </td>
-
-                      <td className="px-4 py-2 whitespace-nowrap">{n.emissao}</td>
-                      <td className="px-4 py-2 whitespace-nowrap">{n.vencimento}</td>
-                      <td className="px-4 py-2 whitespace-nowrap">{n.taxaMes.toFixed(2)}%</td>
-                      <td className="px-4 py-2 whitespace-nowrap">{money(n.desconto)}</td>
-                      <td className="px-4 py-2 whitespace-nowrap">{money(n.valorAReceber)}</td>
-
-                      <td className="px-4 py-2">
-                        <div className="flex gap-2">
-                          <button
-                            className="px-2 py-1 border rounded"
-                            onClick={(e) => { e.stopPropagation(); iniciarEdicao(n) }}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            className="px-2 py-1 border rounded text-red-600"
-                            onClick={(e) => { e.stopPropagation(); remover(n.id) }}
-                          >
-                            Excluir
-                          </button>
-                        </div>
+              {itensFiltrados.map(n => (
+                <Fragment key={n.id}>
+                  <tr
+                    className="border-t hover:bg-gray-50 cursor-pointer"
+                    onClick={() => setExpandedId(expandedId === n.id ? null : n.id)}
+                  >
+                    <td className="px-4 py-2">{n.numero}</td>
+                    <td className="px-4 py-2">{n.cedentes?.razao_social}</td>
+                    <td className="px-4 py-2">{n.sacados?.razao_social}</td>
+                    <td className="px-4 py-2">{money(n.valor)}</td>
+                    <td className="px-4 py-2">{money(n.liquido_cedente)}</td>
+                    <td className="px-4 py-2">
+                      {new Date(n.created_at).toLocaleDateString('pt-BR')}
+                    </td>
+                  </tr>
+                  {expandedId === n.id && (
+                    <tr className="bg-gray-50">
+                      <td colSpan={6} className="px-6 py-4">
+                        <div><b>Cedente:</b> {n.cedentes?.razao_social} — {n.cedentes?.cnpj}</div>
+                        <div><b>Sacado:</b> {n.sacados?.razao_social} — {n.sacados?.cnpj}</div>
+                        <div><b>Contrato:</b> {n.contratos?.id} (Limite {money(n.contratos?.limite)})</div>
+                        <div><b>Taxa:</b> {n.taxa_mes}% a.m.</div>
+                        <div><b>Desconto:</b> {money(n.desconto)}</div>
+                        <div><b>Valor a Receber:</b> {money(n.valor_a_receber)}</div>
                       </td>
                     </tr>
-
-                    {/* Detalhes expandido */}
-                    {open && (
-                      <tr className="bg-gray-50 border-t">
-                        <td colSpan={10} className="px-6 py-4">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="rounded-xl border bg-white p-4">
-                              <div className="text-xs text-gray-500 mb-2">Cálculo</div>
-                              <div className="space-y-1 text-sm">
-                                <div className="flex justify-between"><span>Valor da Nota</span><b>{money(n.valor)}</b></div>
-                                <div className="flex justify-between"><span>Taxa financeira</span><span>{n.taxaMes.toFixed(2)}% a.m.</span></div>
-                                <div className="flex justify-between"><span>Dias</span><span>{n.dias}</span></div>
-                                <div className="flex justify-between"><span>Desconto financeiro</span><b>{money(n.valor * (n.taxaMes/100) * (n.dias/30))}</b></div>
-                                <div className="flex justify-between"><span>Tarifa fixa</span><b>{money(n.tarifaFixa)}</b></div>
-                                <div className="flex justify-between"><span>Taxa adm</span><b>{money(n.valor * (n.taxaAdmPerc/100))}</b></div>
-                                <div className="flex justify-between"><span>IOF</span><b>{money(n.valor * (n.iofPerc/100))}</b></div>
-                                <div className="flex justify-between border-t pt-2"><span>Desconto total</span><b>{money(n.desconto)}</b></div>
-                                <div className="flex justify-between"><span>Líquido ao Cedente</span><b>{money(n.liquidoCedente)}</b></div>
-                                <div className="flex justify-between"><span>Valor a Receber (nominal)</span><b>{money(n.valorAReceber)}</b></div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-xl border bg-white p-4">
-                              <div className="text-xs text-gray-500 mb-2">Identificação</div>
-                              <div className="space-y-1 text-sm">
-                                <div><b>Cedente:</b> {n.cedenteNome} — {n.cnpjCedente}</div>
-                                <div><b>Sacado:</b> {n.sacadoNome} — {n.cnpjSacado}</div>
-                                <div><b>NF:</b> {n.numero}</div>
-                                <div><b>Emissão/Venc.:</b> {n.emissao} → {n.vencimento}</div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-xl border bg-white p-4">
-                              <div className="text-xs text-gray-500 mb-2">Anexos</div>
-                              {n.anexos.length ? (
-                                <div className="flex flex-wrap gap-2">
-                                  {n.anexos.map((a, idx) => (
-                                    <a
-                                      key={idx}
-                                      className="px-3 py-1.5 text-sm rounded-lg border hover:bg-gray-50"
-                                      href={a.previewUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      title={a.nome}
-                                    >
-                                      {a.tipo === 'nota_fiscal' ? 'Nota Fiscal' : a.tipo === 'boleto' ? 'Boleto' : 'Aditivo'}
-                                    </a>
-                                  ))}
-                                </div>
-                              ) : <div className="text-gray-400 text-sm">Nenhum anexo.</div>}
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                )
-              })}
+                  )}
+                </Fragment>
+              ))}
             </tbody>
           </table>
         </div>
@@ -672,152 +256,162 @@ export default function NovaNota() {
         {/* FORM */}
         {mostrarForm && (
           <div className="border rounded-xl p-4 bg-white">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-lg font-medium">
-                {editingId ? 'Editar Nota' : 'Cadastrar Nota (Antecipação)'}
-              </h2>
-              {editingId && (
-                <button type="button" onClick={cancelarEdicao} className="px-3 py-1.5 text-sm rounded-lg border">
-                  Cancelar edição
-                </button>
-              )}
-            </div>
+            <h2 className="text-lg font-medium mb-3">Cadastrar Nota</h2>
 
             <form onSubmit={onSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Cedente */}
               <div>
                 <label className="block text-sm mb-1">Cedente</label>
                 <select
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
                   value={cedenteId}
                   onChange={(e) => setCedenteId(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
                   required
                 >
                   <option value="">Selecione...</option>
-                  {cedentesMock.map((c) => (
+                  {cedentes.map(c => (
                     <option key={c.id} value={c.id}>
-                      {(c as any).razao || (c as any).nome} — {c.cnpj}
+                      {c.razao_social} — {c.cnpj}
                     </option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm mb-1">CNPJ do Cedente</label>
-                <input className="w-full border rounded-lg px-3 py-2 bg-gray-50" value={cedente?.cnpj || ''} readOnly />
-              </div>
 
+              {/* Sacado */}
               <div>
                 <label className="block text-sm mb-1">Sacado</label>
                 <select
-                  className="w-full border rounded-lg px-3 py-2 bg-white"
                   value={sacadoId}
                   onChange={(e) => setSacadoId(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
                   required
                 >
                   <option value="">Selecione...</option>
-                  {sacadosMock.map((s) => (
+                  {sacados.map(s => (
                     <option key={s.id} value={s.id}>
-                      {(s as any).razao || (s as any).nome} — {s.cnpj}
+                      {s.razao_social} — {s.cnpj}
                     </option>
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm mb-1">CNPJ do Sacado</label>
-                <input className="w-full border rounded-lg px-3 py-2 bg-gray-50" value={sacado?.cnpj || ''} readOnly />
-              </div>
 
+              {/* Contrato */}
               <div className="md:col-span-2">
+                <label className="block text-sm mb-1">Contrato</label>
+                <select
+                  value={contratoId}
+                  onChange={(e) => setContratoId(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  required
+                >
+                  <option value="">Selecione...</option>
+                  {contratos
+                    .filter(c => c.cedente_id === cedenteId)
+                    .map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.tipo} — Limite {money(c.limite)}
+                      </option>
+                    ))}
+                </select>
+                {contratoId && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Limite: {money(limiteContrato)} — Usado: {money(usadoContrato)} — Disponível: <b>{money(disponivel)}</b>
+                  </div>
+                )}
+              </div>
+
+              {/* Dados nota */}
+              <div>
                 <label className="block text-sm mb-1">Número da Nota</label>
-                <input className="w-full border rounded-lg px-3 py-2 bg-white" value={numero} onChange={(e) => setNumero(e.target.value)} required placeholder="Ex.: 12345" />
+                <input
+                  value={numero}
+                  onChange={(e) => setNumero(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  required
+                />
               </div>
-
               <div>
-                <label className="block text-sm mb-1">Data de Emissão</label>
-                <input type="date" className="w-full border rounded-lg px-3 py-2 bg-white" value={emissao} onChange={(e) => setEmissao(e.target.value)} required />
+                <label className="block text-sm mb-1">Emissão</label>
+                <input
+                  type="date"
+                  value={emissao}
+                  onChange={(e) => setEmissao(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  required
+                />
               </div>
               <div>
-                <label className="block text-sm mb-1">Data de Vencimento</label>
-                <input type="date" className="w-full border rounded-lg px-3 py-2 bg-white" value={vencimento} onChange={(e) => setVencimento(e.target.value)} required />
+                <label className="block text-sm mb-1">Vencimento</label>
+                <input
+                  type="date"
+                  value={vencimento}
+                  onChange={(e) => setVencimento(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  required
+                />
               </div>
-
               <div>
-                <label className="block text-sm mb-1">Valor da Nota</label>
-                <InputMoney inputMode="decimal" step="0.01" value={String(valor)}
+                <label className="block text-sm mb-1">Valor</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={valor}
                   onChange={(e) => setValor(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00" required />
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  required
+                />
               </div>
+
+              {/* Taxas */}
               <div>
                 <label className="block text-sm mb-1">Taxa financeira (% a.m.)</label>
-                <InputPercent inputMode="decimal" step="0.01" value={String(taxaMes)}
+                <input
+                  type="number"
+                  step="0.01"
+                  value={taxaMes}
                   onChange={(e) => setTaxaMes(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="Ex.: 3,5" required />
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                  required
+                />
               </div>
-
-              {/* Outras taxas */}
               <div>
-                <label className="block text-sm mb-1">Tarifa fixa</label>
-                <InputMoney inputMode="decimal" step="0.01" value={String(tarifaFixa)}
+                <label className="block text-sm mb-1">Tarifa fixa (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={tarifaFixa}
                   onChange={(e) => setTarifaFixa(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00" />
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                />
               </div>
               <div>
-                <label className="block text-sm mb-1">Taxa administrativa (% sobre o valor)</label>
-                <InputPercent inputMode="decimal" step="0.01" value={String(taxaAdmPerc)}
+                <label className="block text-sm mb-1">Taxa Adm (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={taxaAdmPerc}
                   onChange={(e) => setTaxaAdmPerc(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00" />
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                />
               </div>
               <div>
-                <label className="block text-sm mb-1">IOF (% sobre o valor)</label>
-                <InputPercent inputMode="decimal" step="0.01" value={String(iofPerc)}
+                <label className="block text-sm mb-1">IOF (%)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={iofPerc}
                   onChange={(e) => setIofPerc(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="0,00" />
-              </div>
-
-              {/* métricas */}
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-5 gap-3 pt-2">
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Dias</div>
-                  <div className="text-lg font-medium">{dias}</div>
-                </div>
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Desconto financeiro</div>
-                  <div className="text-lg font-medium">
-                    {money((typeof valor==='number'?valor:0) * ((typeof taxaMes==='number'?taxaMes:0)/100) * (dias/30))}
-                  </div>
-                </div>
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Outras taxas</div>
-                  <div className="text-lg font-medium">
-                    {money((typeof tarifaFixa==='number'?tarifaFixa:0) + (typeof valor==='number'?valor:0) * ((typeof taxaAdmPerc==='number'?taxaAdmPerc:0)/100 + (typeof iofPerc==='number'?iofPerc:0)/100))}
-                  </div>
-                </div>
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Desconto total</div>
-                  <div className="text-lg font-medium">{money(calc.descontoTotal || 0)}</div>
-                </div>
-                <div className="border rounded-lg p-3 bg-gray-50">
-                  <div className="text-xs text-gray-500">Líquido ao Cedente</div>
-                  <div className="text-lg font-medium">{money(calc.liquido || 0)}</div>
-                </div>
-              </div>
-
-              {/* anexos */}
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <UploadBox label="Anexo — Nota Fiscal" accept=".pdf,image/*" file={nfFile} onChange={setNfFile}
-                  helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
-                <UploadBox label="Anexo — Boleto" accept=".pdf,image/*" file={boletoFile} onChange={setBoletoFile}
-                  helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
-                <UploadBox label="Anexo — Aditivo" accept=".pdf,image/*" file={aditivoFile} onChange={setAditivoFile}
-                  helper={editingId ? 'Deixe em branco para manter o arquivo atual' : undefined} />
+                  className="w-full border rounded-lg px-3 py-2 bg-white"
+                />
               </div>
 
               <div className="md:col-span-2 pt-2 flex gap-3">
-                <button className="px-4 py-2 rounded-xl bg-black text-white">
-                  {editingId ? 'Atualizar' : 'Salvar'}
+                <button type="submit" className="px-4 py-2 rounded-xl bg-black text-white">
+                  Salvar
                 </button>
                 <button
                   type="button"
-                  onClick={() => { editingId ? cancelarEdicao() : (limparForm(), setMostrarForm(false)) }}
+                  onClick={() => setMostrarForm(false)}
                   className="px-4 py-2 rounded-xl border"
                 >
                   Cancelar
