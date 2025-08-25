@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, Fragment } from 'react'
 import AdminLayout from '@/components/AdminLayout'
-import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabaseClient'
 
 type Cedente = { id: string; razao_social: string; cnpj: string }
 type Sacado = { id: string; razao_social: string; cnpj: string }
